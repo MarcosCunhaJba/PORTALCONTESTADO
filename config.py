@@ -1,0 +1,3 @@
+HOSTNAME_REDE = "DESKTOP-J4DJ8JS"
+PORTA = 8090
+SECRET_KEY = "ch-contestado-rede-local-2026"
