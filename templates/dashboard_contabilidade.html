@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block titulo %}Área da Contabilidade{% endblock %}
+{% block content %}
+<div class="promo">
+    <div>
+        <h2>🚀 Contador, você precisa de um sistema confiável para indicar aos seus clientes?</h2>
+        <p>A CH Contestado entrega um sistema de gestão moderno, simples e com suporte humano. Indique uma solução segura e fortaleça o relacionamento com seus clientes.</p>
+        <div class="promo-tags">
+            <span>PDV</span><span>NF-e/NFC-e</span><span>Financeiro</span><span>Suporte próximo</span>
+        </div>
+    </div>
+    <a class="promo-btn" href="https://wa.me/554991762559" target="_blank">Falar com a CH</a>
+</div>
+
+<form class="filters" method="get">
+    <input name="cnpj" value="{{busca}}" placeholder="Buscar cliente por CNPJ">
+    <select name="mes">
+        {% for cod,nome in MESES %}<option value="{{cod}}" {% if mes==cod %}selected{% endif %}>{{nome}}</option>{% endfor %}
+    </select>
+    <select name="ano">
+        {% for a in ANOS %}<option value="{{a}}" {% if ano==a %}selected{% endif %}>{{a}}</option>{% endfor %}
+    </select>
+    <button class="btn btn-primary">Filtrar</button>
+</form>
+
+<div class="table-card">
+<table>
+<thead><tr><th>Cliente</th><th>CNPJ</th><th>Documentos</th></tr></thead>
+<tbody>
+{% for item in linhas %}
+<tr>
+<td>{{item.cliente.nome}}</td>
+<td>{{item.cliente.cnpj or '-'}}</td>
+<td>
+    {% if item.docs %}
+        {% for d in item.docs %}
+            <a href="{{ url_for('download', doc_id=d.id) }}">{{d.nome_original}}</a><br>
+        {% endfor %}
+    {% else %}
+        <span class="muted">Nenhum arquivo no mês</span>
+    {% endif %}
+</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+{% endblock %}

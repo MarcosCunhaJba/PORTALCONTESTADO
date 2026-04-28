@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+{% block title %}Contabilidades{% endblock %}
+{% block content %}
+
+<div class="card">
+  <form method="post" class="grid2">
+    <div class="field"><label>Nome</label><input name="nome" required></div>
+    <div class="field"><label>CNPJ</label><input name="cnpj"></div>
+    <div class="field"><label>Telefone</label><input name="telefone"></div>
+    <div class="field"><label>E-mail para envio</label><input name="email" type="email"></div>
+    <div class="field"><label>Senha inicial</label><input name="senha" placeholder="123456"></div>
+    <div><button class="btn">Cadastrar contabilidade</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <h3>Contabilidades cadastradas</h3>
+  <table>
+    <tr>
+      <th>Nome</th>
+      <th>CNPJ</th>
+      <th>E-mail</th>
+      <th>Enviar documentos por período</th>
+      <th>Ações</th>
+    </tr>
+    {% for i in itens %}
+    <tr>
+      <td>{{ i.nome }}</td>
+      <td>{{ i.cnpj or '-' }}</td>
+      <td>{{ i.email or '-' }}</td>
+      <td>
+        <form method="get" action="{{ url_for('enviar_documentos', contabilidade_id=i.id) }}" style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:0;">
+          <select name="mes" required style="min-width:95px;">
+            {% for cod, nome in meses %}
+              <option value="{{ cod }}">{{ nome[:3] }}</option>
+            {% endfor %}
+          </select>
+          <select name="ano" required style="min-width:82px;">
+            {% for a in anos %}
+              <option value="{{ a }}">{{ a }}</option>
+            {% endfor %}
+          </select>
+          <button class="btn btn-light" type="submit" name="modo" value="link">Gerar link ZIP</button>
+          <button class="btn" type="submit" name="modo" value="email">Enviar e-mail</button>
+        </form>
+      </td>
+      <td>
+        <a class="btn btn-danger" onclick="return confirm('Excluir contabilidade? Os clientes ficarão sem contabilidade.')" href="{{ url_for('excluir_contabilidade', id=i.id) }}">Excluir</a>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  <small>Escolha o mês e o ano antes de gerar o link ZIP ou enviar por e-mail.</small>
+</div>
+
+{% endblock %}

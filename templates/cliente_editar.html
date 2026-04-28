@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block titulo %}Editar cliente{% endblock %}
+{% block content %}
+<div class="form-card">
+<form method="post" enctype="multipart/form-data" class="grid-form">
+    <input name="nome" value="{{cliente.nome}}" required>
+    <input name="cnpj" value="{{cliente.cnpj or ''}}">
+    <select name="contabilidade_id">
+        <option value="">Sem contabilidade</option>
+        {% for c in contabilidades %}
+        <option value="{{c.id}}" {% if cliente.contabilidade_id==c.id %}selected{% endif %}>{{c.nome}}</option>
+        {% endfor %}
+    </select>
+    <input name="certificado_senha" value="{{cliente.certificado_senha or ''}}" placeholder="Senha certificado">
+    <select name="certificado_ano">
+        <option value="">Ano certificado</option>
+        {% for a in ANOS %}<option value="{{a}}" {% if cliente.certificado_ano==a %}selected{% endif %}>{{a}}</option>{% endfor %}
+    </select>
+    <input type="file" name="certificado">
+    <button class="btn btn-primary">Salvar</button>
+</form>
+</div>
+{% endblock %}

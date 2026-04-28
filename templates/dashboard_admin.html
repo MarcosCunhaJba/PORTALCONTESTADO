@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block titulo %}Dashboard Admin{% endblock %}
+{% block content %}
+<div class="cards">
+    <div class="card"><small>Clientes</small><strong>{{ total_clientes }}</strong></div>
+    <div class="card"><small>Enviados</small><strong>{{ total_enviado }}</strong></div>
+    <div class="card"><small>Pendentes</small><strong>{{ total_pendente }}</strong></div>
+</div>
+
+<form class="filters" method="get">
+    <input name="q" value="{{ q }}" placeholder="Buscar cliente/CNPJ">
+    <select name="mes">
+        {% for cod,nome in MESES %}<option value="{{cod}}" {% if mes==cod %}selected{% endif %}>{{nome}}</option>{% endfor %}
+    </select>
+    <select name="ano">
+        {% for a in ANOS %}<option value="{{a}}" {% if ano==a %}selected{% endif %}>{{a}}</option>{% endfor %}
+    </select>
+    <select name="status">
+        <option value="todos" {% if status=="todos" %}selected{% endif %}>Todos</option>
+        <option value="pendente" {% if status=="pendente" %}selected{% endif %}>Falta enviar</option>
+        <option value="enviado" {% if status=="enviado" %}selected{% endif %}>Já enviado</option>
+    </select>
+    <button class="btn btn-primary">Filtrar</button>
+</form>
+
+<div class="table-card">
+<table>
+    <thead>
+        <tr><th>Cliente</th><th>CNPJ</th><th>Contabilidade</th><th>Status</th><th>Arquivo</th><th>Ação</th></tr>
+    </thead>
+    <tbody>
+    {% for item in linhas %}
+        <tr>
+            <td>{{ item.cliente.nome }}</td>
+            <td>{{ item.cliente.cnpj or '-' }}</td>
+            <td>{{ item.cliente.contabilidade_nome or 'Sem contabilidade' }}</td>
+            <td>{% if item.enviado %}<span class="badge ok">Enviado</span>{% else %}<span class="badge pendente">Pendente</span>{% endif %}</td>
+            <td>
+                {% if item.doc %}
+                    <a href="{{ url_for('download', doc_id=item.doc.id) }}">Baixar</a>
+                    <input class="link-input" value="{{ request.host_url }}download/{{ item.doc.id }}" readonly>
+                {% else %}
+                    -
+                {% endif %}
+            </td>
+            <td><a class="btn btn-small" href="{{ url_for('upload_documento', cliente_id=item.cliente.id, mes=mes, ano=ano) }}">Enviar</a></td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+</div>
+{% endblock %}
