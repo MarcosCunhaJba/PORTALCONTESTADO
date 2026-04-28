@@ -1,6 +1,14 @@
 {% extends 'base.html' %}{% block title %}Clientes{% endblock %}{% block content %}
 <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
     <div>
+        <strong>Importação de clientes</strong>
+        <div style="color:#64748b;font-size:13px;margin-top:4px;">Importe clientes em lote por CSV.</div>
+    </div>
+    <a class="btn btn-yellow" href="{{ url_for('importar_clientes_csv') }}">Importar CSV</a>
+</div>
+
+<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+    <div>
         <strong>Conferência de clientes</strong>
         <div style="color:#64748b;font-size:13px;margin-top:4px;">Para exportar, solicite uma senha. Ela será enviada para chcontestado@gmail.com.</div>
     </div>
