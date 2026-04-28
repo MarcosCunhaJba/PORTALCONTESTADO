@@ -1,30 +1,55 @@
-{% extends 'base.html' %}{% block title %}Clientes{% endblock %}{% block content %}
-<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+{% extends 'base.html' %}
+{% block title %}Clientes{% endblock %}
+{% block page_title %}Clientes{% endblock %}
+{% block content %}
+<div class="card actions-bar">
     <div>
-        <strong>Importação de clientes</strong>
-        <div style="color:#64748b;font-size:13px;margin-top:4px;">Importe clientes em lote por CSV.</div>
+        <strong>Clientes</strong>
+        <p>Cadastre, edite, filtre e importe clientes por CSV.</p>
     </div>
-    <a class="btn btn-yellow" href="{{ url_for('importar_clientes_csv') }}">Importar CSV</a>
-</div>
-
-<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
-    <div>
-        <strong>Conferência de clientes</strong>
-        <div style="color:#64748b;font-size:13px;margin-top:4px;">Para exportar, solicite uma senha. Ela será enviada para chcontestado@gmail.com.</div>
-    </div>
-    <div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;">
-        <a class="btn btn-yellow" href="{{ url_for('solicitar_exportacao_clientes') }}">Enviar senha por e-mail</a>
-        <form method="post" action="{{ url_for('exportar_clientes_csv') }}" style="display:flex;gap:8px;align-items:end;">
-            <div class="field" style="margin:0;">
-                <label>Senha</label>
-                <input name="senha_exportacao" placeholder="Digite a senha" required style="min-width:140px;">
-            </div>
-            <button class="btn">Exportar CSV</button>
-        </form>
+    <div class="actions">
+        <a class="btn btn-yellow" href="{{ url_for('importar_clientes_csv') }}">Importar CSV</a>
+        <a class="btn btn-light" href="{{ url_for('exportar_clientes_csv') }}">Exportar CSV</a>
     </div>
 </div>
 
-<div class="card"><form method="post" enctype="multipart/form-data" class="grid2"><div class="field"><label>Razão Social</label><input name="razao" required></div><div class="field"><label>CNPJ</label><input name="cnpj"></div><div class="field"><label>Contabilidade</label><select name="contabilidade_id"><option value="">Sem contabilidade</option>{% for c in contabs %}<option value="{{c.id}}">{{c.nome}}</option>{% endfor %}</select></div><div class="field"><label>Ano do certificado</label><select name="ano_certificado"><option value="">Selecione</option>{% for a in anos %}<option value="{{a}}">{{a}}</option>{% endfor %}</select></div><div class="field"><label>Arquivo certificado digital</label><input type="file" name="certificado"></div><div class="field"><label>Senha certificado</label><input name="senha_certificado"></div><div><button class="btn">Cadastrar cliente</button></div></form></div>
-<div class="card"><form class="filters" method="get"><div class="field"><label>Buscar por CNPJ</label><input name="cnpj" value="{{cnpj}}" placeholder="Digite o CNPJ"></div><div class="field"><label>Filtro</label><select name="filtro"><option value="todos" {% if filtro=='todos' %}selected{% endif %}>Todos</option><option value="sem_contabilidade" {% if filtro=='sem_contabilidade' %}selected{% endif %}>Sem contabilidade associada</option></select></div><button class="btn">Filtrar</button></form></div>
-<div class="card"><table><tr><th>Ano cert.</th><th>Cliente</th><th>CNPJ</th><th>Contabilidade</th><th>Certificado</th><th>Senha</th><th>Ações</th></tr>{% for i in itens %}<tr><td>{{i.ano_certificado or '-'}}</td><td>{{i.razao}}</td><td>{{i.cnpj}}</td><td>{{i.contabilidade_nome or '-'}}</td><td>{% if i.arquivo_certificado %}<a href="{{ url_for('certificado', arquivo=i.arquivo_certificado) }}">Baixar</a>{% else %}-{% endif %}</td><td>{{i.senha_certificado or '-'}}</td><td><a class="btn btn-light" href="{{ url_for('editar_cliente', id=i.id) }}">Editar</a> <a class="btn btn-danger" onclick="return confirm('Excluir cliente?')" href="{{ url_for('excluir_cliente', id=i.id) }}">Excluir</a></td></tr>{% endfor %}</table></div>
+<div class="card">
+    <form method="post" enctype="multipart/form-data" class="grid2">
+        <div class="field"><label>Razão Social</label><input name="razao" required></div>
+        <div class="field"><label>CNPJ</label><input name="cnpj"></div>
+        <div class="field"><label>Contabilidade</label><select name="contabilidade_id"><option value="">Sem contabilidade</option>{% for c in contabs %}<option value="{{c.id}}">{{c.nome}}</option>{% endfor %}</select></div>
+        <div class="field"><label>Ano do certificado</label><select name="ano_certificado"><option value="">Selecione</option>{% for a in anos %}<option value="{{a}}">{{a}}</option>{% endfor %}</select></div>
+        <div class="field"><label>Arquivo certificado digital</label><input type="file" name="certificado"></div>
+        <div class="field"><label>Senha certificado</label><input name="senha_certificado"></div>
+        <div><button class="btn">Cadastrar cliente</button></div>
+    </form>
+</div>
+
+<div class="card">
+    <form class="filters" method="get">
+        <div class="field"><label>Buscar por CNPJ</label><input name="cnpj" value="{{cnpj}}" placeholder="Digite o CNPJ"></div>
+        <div class="field"><label>Filtro</label><select name="filtro"><option value="todos" {% if filtro=='todos' %}selected{% endif %}>Todos</option><option value="sem_contabilidade" {% if filtro=='sem_contabilidade' %}selected{% endif %}>Sem contabilidade associada</option></select></div>
+        <button class="btn">Filtrar</button>
+    </form>
+</div>
+
+<div class="card">
+<table>
+    <tr><th>Ano cert.</th><th>Cliente</th><th>CNPJ</th><th>Contabilidade</th><th>Certificado</th><th>Senha</th><th>Ações</th></tr>
+    {% for i in itens %}
+    <tr>
+        <td>{{i.ano_certificado or '-'}}</td>
+        <td>{{i.razao}}</td>
+        <td>{{i.cnpj or '-'}}</td>
+        <td>{{i.contabilidade_nome or '-'}}</td>
+        <td>{% if i.arquivo_certificado %}<a href="{{ url_for('certificado', arquivo=i.arquivo_certificado) }}">Baixar</a>{% else %}-{% endif %}</td>
+        <td>{{i.senha_certificado or '-'}}</td>
+        <td class="actions">
+            <a class="btn btn-light" href="{{ url_for('editar_cliente', id=i.id) }}">Editar</a>
+            <a class="btn btn-danger" onclick="return confirm('Excluir cliente?')" href="{{ url_for('excluir_cliente', id=i.id) }}">Excluir</a>
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+</div>
 {% endblock %}

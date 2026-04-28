@@ -1,19 +1,10 @@
-{% extends 'base.html' %}{% block title %}Interesses CH{% endblock %}{% block content %}
-<div class="card">
-    <h2 style="margin-top:0;">Contabilidades que demonstraram interesse</h2>
-    <p style="color:#64748b;margin-top:-6px;">Lista de usuários que clicaram no botão “Falar com a CH” na área da contabilidade.</p>
-</div>
-
+{% extends 'base.html' %}
+{% block title %}Interesses CH{% endblock %}
+{% block page_title %}Interesses CH{% endblock %}
+{% block content %}
 <div class="card">
 <table>
-<tr>
-    <th>Data/Hora</th>
-    <th>Usuário</th>
-    <th>E-mail</th>
-    <th>Contabilidade</th>
-    <th>IP</th>
-    <th>E-mail enviado</th>
-</tr>
+<tr><th>Data/Hora</th><th>Usuário</th><th>E-mail</th><th>Contabilidade</th><th>IP</th><th>E-mail enviado</th></tr>
 {% for r in rows %}
 <tr>
     <td>{{r.criado_em}}</td>
@@ -24,9 +15,7 @@
     <td>{% if r.email_enviado %}<span class="status-ok">Sim</span>{% else %}<span class="status-pend">Não</span>{% endif %}</td>
 </tr>
 {% endfor %}
-{% if not rows %}
-<tr><td colspan="6">Nenhum interesse registrado ainda.</td></tr>
-{% endif %}
+{% if not rows %}<tr><td colspan="6">Nenhum interesse registrado ainda.</td></tr>{% endif %}
 </table>
 </div>
 {% endblock %}

@@ -1,5 +1,44 @@
-{% extends 'base.html' %}{% block title %}Dashboard Admin{% endblock %}{% block content %}
-<div class="cards"><div class="card metric"><b>{{stats.clientes}}</b><span>Clientes</span></div><div class="card metric"><b>{{stats.contabilidades}}</b><span>Contabilidades</span></div><div class="card metric"><b>{{stats.pendentes}}</b><span>Pendentes no filtro</span></div><div class="card metric"><b>{{stats.enviados}}</b><span>Enviados no filtro</span></div></div>
-<div class="card"><form class="filters"><div class="field"><label>Mês</label><select name="mes">{% for k,v in meses %}<option value="{{k}}" {% if k==mes %}selected{% endif %}>{{v}}</option>{% endfor %}</select></div><div class="field"><label>Ano</label><select name="ano">{% for a in anos %}<option value="{{a}}" {% if a==ano %}selected{% endif %}>{{a}}</option>{% endfor %}</select></div><div class="field"><label>Status</label><select name="status"><option value="todos" {% if status=='todos' %}selected{% endif %}>Todos</option><option value="pendente" {% if status=='pendente' %}selected{% endif %}>Falta enviar</option><option value="enviado" {% if status=='enviado' %}selected{% endif %}>Já enviado</option></select></div><button class="btn">Filtrar</button></form></div>
-<div class="card"><table><thead><tr><th>Cliente</th><th>CNPJ</th><th>Contabilidade</th><th>Status</th><th>Arquivo / Link</th><th>Ação</th></tr></thead><tbody>{% for r in rows %}<tr><td><b>{{r.razao}}</b></td><td>{{r.cnpj or '-'}}</td><td>{{r.contabilidade_nome or '-'}}</td><td>{% if r.arquivo %}<span class="status-ok">Enviado</span><br><small>{{r.enviado_em}}</small>{% else %}<span class="status-pend">Falta subir</span>{% endif %}</td><td>{% if r.arquivo %}<a class="btn btn-light" href="{{ url_for('download', arquivo=r.arquivo) }}">Baixar</a><br><br><input class="share" readonly value="{{ request.host_url }}s/{{ r.token }}">{% else %}-{% endif %}</td><td><a class="btn" href="{{ url_for('upload', cliente_id=r.id, mes=mes, ano=ano) }}">Enviar</a></td></tr>{% endfor %}</tbody></table></div>
+{% extends 'base.html' %}
+{% block title %}Dashboard{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+{% block content %}
+<div class="cards">
+    <div class="card metric"><span>Total de clientes</span><b>{{ total_clientes }}</b></div>
+    <div class="card metric"><span>Com documento</span><b>{{ enviados }}</b></div>
+    <div class="card metric"><span>Faltando</span><b>{{ pendentes }}</b></div>
+</div>
+
+<div class="card">
+    <form class="filters" method="get">
+        <div class="field"><label>Buscar cliente/CNPJ</label><input name="q" value="{{q}}"></div>
+        <div class="field"><label>Mês</label><select name="mes">{% for k,v in MESES %}<option value="{{k}}" {% if k==mes %}selected{% endif %}>{{v}}</option>{% endfor %}</select></div>
+        <div class="field"><label>Ano</label><select name="ano">{% for a in ANOS %}<option value="{{a}}" {% if a==ano %}selected{% endif %}>{{a}}</option>{% endfor %}</select></div>
+        <div class="field"><label>Status</label><select name="status"><option value="todos" {% if status=='todos' %}selected{% endif %}>Todos</option><option value="pendente" {% if status=='pendente' %}selected{% endif %}>Falta enviar</option><option value="enviado" {% if status=='enviado' %}selected{% endif %}>Já enviado</option></select></div>
+        <button class="btn">Filtrar</button>
+    </form>
+</div>
+
+<div class="card">
+    <h2>Grid de Pendências - {{nome_mes(mes)}}/{{ano}}</h2>
+    <table>
+        <tr><th>Cliente</th><th>CNPJ</th><th>Contabilidade</th><th>Status</th><th>Arquivo</th><th>Ação</th></tr>
+        {% for r in linhas %}
+        <tr>
+            <td>{{r.cliente.razao}}</td>
+            <td>{{r.cliente.cnpj or '-'}}</td>
+            <td>{{r.cliente.contabilidade_nome or '-'}}</td>
+            <td>{% if r.tem_doc %}<span class="status-ok">Enviado</span>{% else %}<span class="status-pend">Falta enviar</span>{% endif %}</td>
+            <td>
+                {% if r.doc %}
+                    <a href="{{ url_for('download', arquivo=r.doc.arquivo) }}">Baixar</a><br>
+                    <input class="share" readonly value="{{ request.host_url }}download/{{r.doc.arquivo}}">
+                {% else %}
+                    -
+                {% endif %}
+            </td>
+            <td><a class="btn" href="{{ url_for('upload', cliente_id=r.cliente.id, mes=mes, ano=ano) }}">Enviar</a></td>
+        </tr>
+        {% endfor %}
+    </table>
+</div>
 {% endblock %}

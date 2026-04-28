@@ -1,6 +1,59 @@
-<!doctype html><html lang="pt-br"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CH Contestado</title><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"></head><body>{% if session.get('user_id') %}<div class="app"><aside class="sidebar"><div class="brand"><img src="{{ url_for('static', filename='logo_ch_contestado.png') }}" alt="CH Contestado"></div><nav class="nav">{% if session.get('tipo')=='admin' %}<a href="{{ url_for('dashboard') }}">📊 Dashboard</a><a href="{{ url_for('clientes') }}">👥 Clientes</a><a href="{{ url_for('contabilidades') }}">🏢 Contabilidades</a><a href="{{ url_for('historico_envios') }}">📦 Histórico de envios</a><a href="{{ url_for('config_email') }}">✉️ Config. e-mail</a>{% else %}<a href="{{ url_for('area_contabilidade') }}">📁 Documentos</a>{% endif %}<a href="{{ url_for('logout') }}">🚪 Sair</a><a href="{{ url_for('interesses_ch') }}">Interesses CH</a></nav><div class="side-footer"><strong>SOFTWARE DE GESTÃO</strong><span>49 9 9176-2559</span></div></aside><main class="main"><div class="topbar"><div><h1>{% block title %}{% endblock %}</h1><small>CH Contestado • Gestão de documentos contábeis</small></div><b>{{ session.get('nome') }}</b></div>{% with msgs=get_flashed_messages() %}{% for m in msgs %}<div class="flash">{{m}}</div>{% endfor %}{% endwith %}{% block content %}{% endblock %}</main></div>{% else %}{% block public %}{% endblock %}{% endif %}
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>{% block title %}CH Contestado{% endblock %}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="app">
+    <aside class="sidebar">
+        <div class="brand">
+            <img src="{{ url_for('static', filename='logo_ch_contestado.png') }}" alt="CH Contestado">
+        </div>
 
+        {% if user %}
+        <nav class="nav">
+            {% if user.tipo == 'admin' %}
+                <a href="{{ url_for('dashboard_admin') }}">Dashboard</a>
+                <a href="{{ url_for('clientes') }}">Clientes</a>
+                <a href="{{ url_for('contabilidades') }}">Contabilidades</a>
+                <a href="{{ url_for('historico_envios') }}">Histórico de Envios</a>
+                <a href="{{ url_for('interesses_ch') }}">Interesses CH</a>
+                <a href="{{ url_for('backup_completo') }}">Backup Completo</a>
+            {% else %}
+                <a href="{{ url_for('area_contabilidade') }}">Área Contabilidade</a>
+            {% endif %}
+            <a href="{{ url_for('logout') }}">Sair</a>
+        </nav>
+        {% endif %}
 
+        <div class="side-footer">
+            <strong>SOFTWARE DE GESTÃO</strong>
+            <span>49 9 9176-2559</span>
+        </div>
+    </aside>
+
+    <main class="main">
+        <div class="topbar">
+            <div>
+                <h1>{% block page_title %}{% endblock %}</h1>
+                <p>Gestão de documentos contábeis</p>
+            </div>
+        </div>
+
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                {% for m in messages %}
+                    <div class="flash">{{ m }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </main>
+</div>
 
 {% if session.get('tipo') == 'contabilidade' %}
 <div id="popup-ch" class="popup-mini" style="display:none;">
@@ -8,42 +61,36 @@
         <span>🚀 Parceria CH</span>
         <button type="button" onclick="fecharPopupMini()" class="popup-mini-close">×</button>
     </div>
-
     <div class="popup-mini-content">
         <strong>Quer aumentar seu faturamento?</strong>
         <p>Indique a <b>CH Contestado</b> e entregue mais valor aos seus clientes.</p>
-
         <a href="https://wa.me/554991762559?text=Olá, vi a oportunidade de parceria no sistema CH Contestado"
            target="_blank"
-           class="popup-mini-btn">
-           📲 Quero ser parceiro
-        </a>
+           onclick="registrarInteresseCH()"
+           class="popup-mini-btn">📲 Quero ser parceiro</a>
     </div>
 </div>
 
 <script>
 function mostrarPopupMini(){
-    if(window.location.pathname === "/"){
-        return;
-    }
-
+    if(window.location.pathname === "/"){ return; }
     let hoje = new Date().toDateString();
     let ultimo = localStorage.getItem("popup_ch_mini");
-
     if(ultimo !== hoje && document.getElementById("popup-ch")){
         document.getElementById("popup-ch").style.display = "block";
     }
 }
-
 function fecharPopupMini(){
     if(document.getElementById("popup-ch")){
         document.getElementById("popup-ch").style.display = "none";
     }
     localStorage.setItem("popup_ch_mini", new Date().toDateString());
 }
-
+function registrarInteresseCH(){
+    fetch("{{ url_for('registrar_interesse_ch') }}").catch(function(){});
+}
 setTimeout(mostrarPopupMini, 2000);
 </script>
 {% endif %}
-
-</body></html>
+</body>
+</html>

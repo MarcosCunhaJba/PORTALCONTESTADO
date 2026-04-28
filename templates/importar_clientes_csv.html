@@ -1,47 +1,17 @@
-{% extends 'base.html' %}{% block title %}Importar Clientes CSV{% endblock %}{% block content %}
+{% extends 'base.html' %}
+{% block title %}Importar Clientes CSV{% endblock %}
+{% block page_title %}Importar Clientes CSV{% endblock %}
+{% block content %}
 <div class="card">
-    <h2 style="margin-top:0;">Importar clientes por CSV</h2>
-    <p style="color:#64748b;">
-        Envie uma planilha CSV com as colunas: <b>razao</b>, <b>cnpj</b>, <b>contabilidade_id</b>, <b>ano_certificado</b>, <b>senha_certificado</b>.
-    </p>
-    <p>
-        <a class="btn btn-light" href="{{ url_for('modelo_clientes_csv') }}">Baixar modelo CSV</a>
-    </p>
+    <p>Envie um CSV com as colunas: <b>razao</b>, <b>cnpj</b>, <b>contabilidade_id</b>, <b>ano_certificado</b>, <b>senha_certificado</b>.</p>
+    <p><a class="btn btn-light" href="{{ url_for('modelo_clientes_csv') }}">Baixar modelo CSV</a></p>
 </div>
 
 <div class="card">
-    <form method="post" enctype="multipart/form-data" class="grid2">
-        <div class="field">
-            <label>Arquivo CSV</label>
-            <input type="file" name="arquivo_csv" accept=".csv" required>
-        </div>
-
-        <div class="field">
-            <label>Contabilidade padrão opcional</label>
-            <select name="contabilidade_id">
-                <option value="">Usar contabilidade_id do CSV / sem vínculo</option>
-                {% for c in contabs %}
-                    <option value="{{c.id}}">{{c.id}} - {{c.nome}}</option>
-                {% endfor %}
-            </select>
-        </div>
-
-        <div>
-            <button class="btn">Importar clientes</button>
-            <a class="btn btn-light" href="{{ url_for('clientes') }}">Voltar</a>
-        </div>
-    </form>
-</div>
-
-<div class="card">
-    <h3>Como preencher</h3>
-    <table>
-        <tr><th>Coluna</th><th>Obrigatório?</th><th>Exemplo</th></tr>
-        <tr><td>razao</td><td>Sim</td><td>Mercado Central LTDA</td></tr>
-        <tr><td>cnpj</td><td>Não, mas recomendado</td><td>12.345.678/0001-90</td></tr>
-        <tr><td>contabilidade_id</td><td>Não</td><td>1</td></tr>
-        <tr><td>ano_certificado</td><td>Não</td><td>2026</td></tr>
-        <tr><td>senha_certificado</td><td>Não</td><td>senha123</td></tr>
-    </table>
+<form method="post" enctype="multipart/form-data" class="grid2">
+    <div class="field"><label>Arquivo CSV</label><input type="file" name="arquivo_csv" accept=".csv" required></div>
+    <div class="field"><label>Contabilidade padrão opcional</label><select name="contabilidade_id"><option value="">Usar CSV / sem vínculo</option>{% for c in contabs %}<option value="{{c.id}}">{{c.id}} - {{c.nome}}</option>{% endfor %}</select></div>
+    <div><button class="btn">Importar clientes</button> <a class="btn btn-light" href="{{ url_for('clientes') }}">Voltar</a></div>
+</form>
 </div>
 {% endblock %}

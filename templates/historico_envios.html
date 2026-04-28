@@ -1,1 +1,20 @@
-{% extends 'base.html' %}{% block title %}Histórico de Envios{% endblock %}{% block content %}<div class="card"><h2>Histórico de envios</h2><table><tr><th>Data</th><th>Contabilidade</th><th>Mês/Ano</th><th>E-mail</th><th>Status e-mail</th><th>Link</th></tr>{% for e in envios %}<tr><td>{{e.criado_em}}</td><td>{{e.contabilidade_nome or '-'}}</td><td>{{e.mes}}/{{e.ano}}</td><td>{{e.email_destino or '-'}}</td><td>{% if e.enviado_email %}<span class="status-ok">Enviado</span>{% else %}<span class="status-pend">Link gerado</span>{% endif %}</td><td><input class="share" readonly value="{{ request.host_url }}zip/{{e.token}}"></td></tr>{% endfor %}</table></div>{% endblock %}
+{% extends 'base.html' %}
+{% block title %}Histórico de Envios{% endblock %}
+{% block page_title %}Histórico de Envios{% endblock %}
+{% block content %}
+<div class="card">
+<table>
+<tr><th>Data</th><th>Contabilidade</th><th>Mês/Ano</th><th>E-mail</th><th>Status</th><th>ZIP</th></tr>
+{% for e in envios %}
+<tr>
+    <td>{{e.criado_em}}</td>
+    <td>{{e.contabilidade_nome or '-'}}</td>
+    <td>{{nome_mes(e.mes)}}/{{e.ano}}</td>
+    <td>{{e.email_destino or '-'}}</td>
+    <td>{% if e.enviado_email %}<span class="status-ok">E-mail enviado</span>{% else %}<span class="status-pend">Link gerado</span>{% endif %}</td>
+    <td>{% if e.arquivo_zip %}<a href="{{ url_for('zip_publico', token=e.token) }}">Baixar</a>{% else %}-{% endif %}</td>
+</tr>
+{% endfor %}
+</table>
+</div>
+{% endblock %}
