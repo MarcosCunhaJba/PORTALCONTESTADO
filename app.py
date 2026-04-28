@@ -8,12 +8,10 @@ from config import SECRET_KEY
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Railway + SQLite persistente:
-# Se existir /data, o sistema salva banco, uploads e configurações dentro do volume.
-# Localmente, continua salvando dentro da pasta do projeto.
-DATA_DIR = os.environ.get('DATA_DIR')
-if not DATA_DIR:
-    DATA_DIR = '/data' if os.path.isdir('/data') else BASE_DIR
+# DADOS PERSISTENTES
+# No Railway, com volume montado em /data, tudo fica salvo aqui.
+# Localmente, se /data não existir, usa a pasta do projeto.
+DATA_DIR = os.environ.get('DATA_DIR') or ('/data' if os.path.isdir('/data') else BASE_DIR)
 
 DB_PATH = os.path.join(DATA_DIR, 'database.db')
 UPLOAD_DIR = os.path.join(DATA_DIR, 'uploads')
@@ -418,12 +416,3 @@ def exportar_clientes_csv():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8090)))
-
-
-# 🔥 BACKUP DOWNLOAD
-@app.route('/backup-download')
-def backup_download():
-    try:
-        return send_file(DB_PATH, as_attachment=True)
-    except Exception as e:
-        return f"Erro ao baixar backup: {str(e)}"
