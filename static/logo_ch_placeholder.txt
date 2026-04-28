@@ -1,0 +1,1 @@
+Coloque sua logo oficial como static/logo.png se quiser usar imagem real.
