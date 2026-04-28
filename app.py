@@ -7,13 +7,23 @@ from werkzeug.utils import secure_filename
 from config import SECRET_KEY
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, 'database.db')
-UPLOAD_DIR = os.path.join(BASE_DIR, 'uploads')
+
+# Railway + SQLite persistente:
+# Se existir /data, o sistema salva banco, uploads e configurações dentro do volume.
+# Localmente, continua salvando dentro da pasta do projeto.
+DATA_DIR = os.environ.get('DATA_DIR')
+if not DATA_DIR:
+    DATA_DIR = '/data' if os.path.isdir('/data') else BASE_DIR
+
+DB_PATH = os.path.join(DATA_DIR, 'database.db')
+UPLOAD_DIR = os.path.join(DATA_DIR, 'uploads')
 DOC_DIR = os.path.join(UPLOAD_DIR, 'documentos')
 CERT_DIR = os.path.join(UPLOAD_DIR, 'certificados')
 ZIP_DIR = os.path.join(UPLOAD_DIR, 'zips')
-CONFIG_EMAIL = os.path.join(BASE_DIR, 'email_config.json')
-for p in (DOC_DIR, CERT_DIR, ZIP_DIR): os.makedirs(p, exist_ok=True)
+CONFIG_EMAIL = os.path.join(DATA_DIR, 'email_config.json')
+
+for p in (DATA_DIR, UPLOAD_DIR, DOC_DIR, CERT_DIR, ZIP_DIR):
+    os.makedirs(p, exist_ok=True)
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
@@ -407,4 +417,13 @@ def exportar_clientes_csv():
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8090, debug=False)
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8090)))
+
+
+# 🔥 BACKUP DOWNLOAD
+@app.route('/backup-download')
+def backup_download():
+    try:
+        return send_file(DB_PATH, as_attachment=True)
+    except Exception as e:
+        return f"Erro ao baixar backup: {str(e)}"
