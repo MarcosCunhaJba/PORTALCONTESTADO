@@ -414,5 +414,115 @@ def exportar_clientes_csv():
     )
 
 
+
+@app.route('/clientes/importar-csv', methods=['GET', 'POST'])
+@login_required('admin')
+def importar_clientes_csv():
+    con = db()
+    contabs = con.execute('SELECT * FROM contabilidades ORDER BY nome').fetchall()
+
+    if request.method == 'POST':
+        arquivo = request.files.get('arquivo_csv')
+        contabilidade_padrao = request.form.get('contabilidade_id') or None
+
+        if not arquivo or not arquivo.filename:
+            flash('Selecione um arquivo CSV.')
+            con.close()
+            return redirect(url_for('importar_clientes_csv'))
+
+        try:
+            conteudo = arquivo.read().decode('utf-8-sig')
+        except UnicodeDecodeError:
+            arquivo.stream.seek(0)
+            conteudo = arquivo.read().decode('latin-1')
+
+        # Detecta delimitador comum: ; ou ,
+        primeira_linha = conteudo.splitlines()[0] if conteudo.splitlines() else ''
+        delimitador = ';' if primeira_linha.count(';') >= primeira_linha.count(',') else ','
+
+        leitor = csv.DictReader(io.StringIO(conteudo), delimiter=delimitador)
+
+        inseridos = 0
+        atualizados = 0
+        ignorados = 0
+
+        # Aceita cabeçalhos comuns:
+        # razao, cliente, nome, cnpj, contabilidade_id, ano_certificado, senha_certificado
+        for linha in leitor:
+            linha_norm = {str(k).strip().lower(): (v.strip() if isinstance(v, str) else v) for k, v in linha.items() if k}
+
+            razao = (
+                linha_norm.get('razao') or
+                linha_norm.get('razão') or
+                linha_norm.get('cliente') or
+                linha_norm.get('nome') or
+                linha_norm.get('razao social') or
+                linha_norm.get('razão social')
+            )
+
+            cnpj = linha_norm.get('cnpj') or ''
+            contabilidade_id = linha_norm.get('contabilidade_id') or contabilidade_padrao
+            ano_certificado = linha_norm.get('ano_certificado') or linha_norm.get('ano certificado') or None
+            senha_certificado = linha_norm.get('senha_certificado') or linha_norm.get('senha certificado') or ''
+
+            if not razao:
+                ignorados += 1
+                continue
+
+            existente = None
+            if cnpj:
+                existente = con.execute('SELECT id FROM clientes WHERE cnpj=?', (cnpj,)).fetchone()
+
+            if existente:
+                con.execute('''
+                    UPDATE clientes
+                    SET razao=?, contabilidade_id=COALESCE(?, contabilidade_id),
+                        ano_certificado=COALESCE(?, ano_certificado),
+                        senha_certificado=COALESCE(?, senha_certificado)
+                    WHERE id=?
+                ''', (razao, contabilidade_id, ano_certificado, senha_certificado, existente['id']))
+                atualizados += 1
+            else:
+                con.execute('''
+                    INSERT INTO clientes
+                    (razao, cnpj, contabilidade_id, ano_certificado, senha_certificado, criado_em)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (razao, cnpj, contabilidade_id, ano_certificado, senha_certificado, datetime.now().isoformat()))
+                inseridos += 1
+
+        con.commit()
+        con.close()
+        flash(f'Importação concluída: {inseridos} inseridos, {atualizados} atualizados, {ignorados} ignorados.')
+        return redirect(url_for('clientes'))
+
+    con.close()
+    return render_template('importar_clientes_csv.html', contabs=contabs)
+
+
+@app.route('/clientes/modelo-csv')
+@login_required('admin')
+def modelo_clientes_csv():
+    conteudo = 'razao;cnpj;contabilidade_id;ano_certificado;senha_certificado\\nEmpresa Exemplo LTDA;00.000.000/0001-00;;2026;senha123\\n'
+    return Response(
+        conteudo,
+        mimetype='text/csv; charset=utf-8',
+        headers={'Content-Disposition': 'attachment; filename=modelo_importacao_clientes.csv'}
+    )
+
+
+
+@app.route('/status-data')
+@login_required('admin')
+def status_data():
+    info = {
+        'DATA_DIR': DATA_DIR,
+        'DB_PATH': DB_PATH,
+        'UPLOAD_DIR': UPLOAD_DIR,
+        'data_existe': os.path.isdir(DATA_DIR),
+        'db_existe': os.path.exists(DB_PATH)
+    }
+    return '<pre>' + json.dumps(info, indent=2, ensure_ascii=False) + '</pre>'
+
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8090)))
