@@ -2,3 +2,4 @@ flask
 werkzeug
 waitress
 gunicorn
+requests

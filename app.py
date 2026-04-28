@@ -1,4 +1,4 @@
-import os, sqlite3, uuid, zipfile, smtplib, json, csv, io
+import os, sqlite3, uuid, zipfile, smtplib, json, csv, io, requests
 from datetime import datetime
 from email.message import EmailMessage
 from flask import Flask, render_template, request, redirect, session, url_for, send_from_directory, flash, Response
@@ -67,30 +67,46 @@ def email_config():
         with open(CONFIG_EMAIL, 'r', encoding='utf-8') as f: return json.load(f)
     return {"smtp_host":"smtp.gmail.com","smtp_port":587,"smtp_user":"","smtp_password":"","remetente_nome":"CH Contestado"}
 
-def enviar_email_link(destino, assunto, corpo):
-    cfg = email_config()
-    if not cfg.get('smtp_user') or not cfg.get('smtp_password') or not destino:
-        return False, 'SMTP não configurado ou contabilidade sem e-mail.'
-    msg = EmailMessage(); msg['Subject']=assunto; msg['From']=cfg.get('smtp_user'); msg['To']=destino; msg.set_content(corpo)
-    with smtplib.SMTP(cfg.get('smtp_host','smtp.gmail.com'), int(cfg.get('smtp_port',587))) as s:
-        s.starttls(); s.login(cfg['smtp_user'], cfg['smtp_password']); s.send_message(msg)
-    return True, 'E-mail enviado.'
 
+def enviar_email_resend(destino, assunto, corpo):
+    api_key = os.environ.get('RESEND_API_KEY', '').strip()
+    remetente = os.environ.get('RESEND_FROM', 'CH Contestado <onboarding@resend.dev>').strip()
+
+    if not api_key:
+        return False, 'RESEND_API_KEY não configurada no Railway.'
+
+    if not destino:
+        return False, 'E-mail de destino não informado.'
+
+    try:
+        resp = requests.post(
+            'https://api.resend.com/emails',
+            headers={
+                'Authorization': f'Bearer {api_key}',
+                'Content-Type': 'application/json'
+            },
+            json={
+                'from': remetente,
+                'to': [destino],
+                'subject': assunto,
+                'text': corpo
+            },
+            timeout=15
+        )
+
+        if resp.status_code in (200, 202):
+            return True, 'E-mail enviado com sucesso via Resend.'
+
+        return False, f'Erro Resend {resp.status_code}: {resp.text[:500]}'
+
+    except Exception as e:
+        return False, f'Falha ao enviar via Resend: {str(e)}'
+
+def enviar_email_link(destino, assunto, corpo):
+    return enviar_email_resend(destino, assunto, corpo)
 
 def enviar_email_simples(destino, assunto, corpo):
-    cfg = email_config()
-    if not cfg.get('smtp_user') or not cfg.get('smtp_password') or not destino:
-        return False, 'SMTP não configurado.'
-    msg = EmailMessage()
-    msg['Subject'] = assunto
-    msg['From'] = cfg.get('smtp_user')
-    msg['To'] = destino
-    msg.set_content(corpo)
-    with smtplib.SMTP(cfg.get('smtp_host','smtp.gmail.com'), int(cfg.get('smtp_port',587))) as s:
-        s.starttls()
-        s.login(cfg['smtp_user'], cfg['smtp_password'])
-        s.send_message(msg)
-    return True, 'E-mail enviado.'
+    return enviar_email_resend(destino, assunto, corpo)
 
 @app.route('/', methods=['GET','POST'])
 def login():
@@ -522,6 +538,33 @@ def status_data():
         'db_existe': os.path.exists(DB_PATH)
     }
     return '<pre>' + json.dumps(info, indent=2, ensure_ascii=False) + '</pre>'
+
+
+
+@app.route('/backup/database')
+@login_required('admin')
+def backup_database():
+    return send_from_directory(os.path.dirname(DB_PATH), os.path.basename(DB_PATH), as_attachment=True)
+
+
+@app.route('/backup/completo')
+@login_required('admin')
+def backup_completo():
+    nome_zip = f"backup_ch_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+    caminho_zip = os.path.join(ZIP_DIR, nome_zip)
+
+    with zipfile.ZipFile(caminho_zip, 'w', zipfile.ZIP_DEFLATED) as z:
+        if os.path.exists(DB_PATH):
+            z.write(DB_PATH, 'database.db')
+
+        if os.path.exists(UPLOAD_DIR):
+            for raiz, pastas, arquivos in os.walk(UPLOAD_DIR):
+                for arquivo in arquivos:
+                    caminho = os.path.join(raiz, arquivo)
+                    rel = os.path.relpath(caminho, DATA_DIR)
+                    z.write(caminho, rel)
+
+    return send_from_directory(ZIP_DIR, nome_zip, as_attachment=True)
 
 
 if __name__ == '__main__':
