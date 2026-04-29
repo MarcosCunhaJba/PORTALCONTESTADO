@@ -1,10 +1,10 @@
-SISTEMA CH CONTESTADO - FINAL REVISADO
+SISTEMA CH CONTESTADO - FINAL BREVO CORRIGIDO
 
 Railway:
 - Volume mount path: /data
 - Variables:
-  RESEND_API_KEY=sua_chave_resend
-  RESEND_FROM=CH Contestado <onboarding@resend.dev>
+  BREVO_API_KEY=sua_chave_brevo
+  BREVO_FROM=CH Contestado <seuemail@gmail.com>
 
 Dados:
 - Banco: /data/database.db
@@ -18,6 +18,3 @@ Rotas úteis:
 Login admin inicial:
 - admin@admin.com
 - admin123
-
-Observação:
-A tela de login NÃO mostra mais a senha.
