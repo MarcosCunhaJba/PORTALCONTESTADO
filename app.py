@@ -1,5 +1,9 @@
 
 import os
+import base64
+import gzip
+import tempfile
+import xml.etree.ElementTree as ET
 import csv
 import io
 import json
@@ -12,6 +16,7 @@ from functools import wraps
 from flask import Flask, render_template, request, redirect, session, url_for, send_from_directory, flash, Response, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+from cryptography.hazmat.primitives.serialization import pkcs12, Encoding, PrivateFormat, NoEncryption
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get("DATA_DIR") or ("/data" if os.path.isdir("/data") else BASE_DIR)
@@ -21,8 +26,9 @@ UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
 DOC_DIR = os.path.join(UPLOAD_DIR, "documentos")
 CERT_DIR = os.path.join(UPLOAD_DIR, "certificados")
 ZIP_DIR = os.path.join(UPLOAD_DIR, "zips")
+XML_DIR = os.path.join(UPLOAD_DIR, "xmls")
 
-for pasta in (DATA_DIR, UPLOAD_DIR, DOC_DIR, CERT_DIR, ZIP_DIR):
+for pasta in (DATA_DIR, UPLOAD_DIR, DOC_DIR, CERT_DIR, ZIP_DIR, XML_DIR):
     os.makedirs(pasta, exist_ok=True)
 
 app = Flask(__name__)
@@ -114,6 +120,15 @@ def init_db():
         ip TEXT,
         email_enviado INTEGER DEFAULT 0
     );
+        CREATE TABLE IF NOT EXISTS xmls_dfe (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cliente_id INTEGER,
+        nsu TEXT,
+        schema_xml TEXT,
+        chave TEXT,
+        arquivo TEXT,
+        criado_em TEXT
+    );
     """)
     # Autorreparo completo para bancos antigos que já estavam no Railway
     # Isso evita erro 500 quando uma tabela antiga não tem alguma coluna nova.
@@ -166,10 +181,17 @@ def init_db():
     ensure_column(cur, "interesses_ch", "criado_em", "TEXT")
     ensure_column(cur, "interesses_ch", "ip", "TEXT")
     ensure_column(cur, "interesses_ch", "email_enviado", "INTEGER DEFAULT 0")
+    ensure_column(cur, "xmls_dfe", "cliente_id", "INTEGER")
+    ensure_column(cur, "xmls_dfe", "nsu", "TEXT")
+    ensure_column(cur, "xmls_dfe", "schema_xml", "TEXT")
+    ensure_column(cur, "xmls_dfe", "chave", "TEXT")
+    ensure_column(cur, "xmls_dfe", "arquivo", "TEXT")
+    ensure_column(cur, "xmls_dfe", "criado_em", "TEXT")
 
     cur.execute("CREATE INDEX IF NOT EXISTS idx_clientes_contabilidade ON clientes(contabilidade_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_clientes_cnpj ON clientes(cnpj)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_docs_cliente_mes_ano ON documentos(cliente_id, mes, ano)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_xmls_cliente ON xmls_dfe(cliente_id, nsu)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
 
     if not cur.execute("SELECT id FROM users WHERE email=?", ("admin@admin.com",)).fetchone():
@@ -729,6 +751,246 @@ def historico_envios():
     """).fetchall()
     con.close()
     return render_template("historico_envios.html", envios=envios)
+
+
+# =========================================================
+# XML / DF-e MANUAL
+# =========================================================
+
+def somente_digitos(valor):
+    return "".join(ch for ch in str(valor or "") if ch.isdigit())
+
+
+def salvar_certificado_pfx_temporario(caminho_pfx, senha):
+    with open(caminho_pfx, "rb") as f:
+        pfx_data = f.read()
+
+    senha_bytes = senha.encode("utf-8") if senha else None
+    private_key, certificate, additional_certs = pkcs12.load_key_and_certificates(pfx_data, senha_bytes)
+
+    if not private_key or not certificate:
+        raise Exception("Certificado PFX inválido ou senha incorreta.")
+
+    cert_temp = tempfile.NamedTemporaryFile(delete=False, suffix=".pem")
+    key_temp = tempfile.NamedTemporaryFile(delete=False, suffix=".pem")
+
+    cert_temp.write(certificate.public_bytes(Encoding.PEM))
+    if additional_certs:
+        for cert in additional_certs:
+            cert_temp.write(cert.public_bytes(Encoding.PEM))
+    cert_temp.close()
+
+    key_temp.write(private_key.private_bytes(
+        Encoding.PEM,
+        PrivateFormat.TraditionalOpenSSL,
+        NoEncryption()
+    ))
+    key_temp.close()
+
+    return cert_temp.name, key_temp.name
+
+
+def consultar_dfe_sefaz(cliente, cuf_autor="42", tp_amb="1"):
+    cnpj = somente_digitos(cliente["cnpj"])
+    if len(cnpj) != 14:
+        return False, "CNPJ do cliente inválido.", 0
+
+    if not cliente["arquivo_certificado"]:
+        return False, "Cliente sem certificado digital A1 cadastrado.", 0
+
+    if not cliente["senha_certificado"]:
+        return False, "Cliente sem senha do certificado cadastrada.", 0
+
+    caminho_pfx = os.path.join(CERT_DIR, cliente["arquivo_certificado"])
+    if not os.path.exists(caminho_pfx):
+        return False, "Arquivo do certificado não encontrado no servidor.", 0
+
+    con = db()
+    ultimo = con.execute(
+        "SELECT nsu FROM xmls_dfe WHERE cliente_id=? ORDER BY CAST(nsu AS INTEGER) DESC LIMIT 1",
+        (cliente["id"],)
+    ).fetchone()
+    con.close()
+
+    ult_nsu = (ultimo["nsu"] if ultimo and ultimo["nsu"] else "0").zfill(15)
+    cert_pem = key_pem = None
+
+    try:
+        cert_pem, key_pem = salvar_certificado_pfx_temporario(caminho_pfx, cliente["senha_certificado"])
+
+        endpoint = "https://www1.nfe.fazenda.gov.br/NFeDistribuicaoDFe/NFeDistribuicaoDFe.asmx"
+
+        dist_xml = f"""<distDFeInt versao="1.01" xmlns="http://www.portalfiscal.inf.br/nfe">
+  <tpAmb>{tp_amb}</tpAmb>
+  <cUFAutor>{cuf_autor}</cUFAutor>
+  <CNPJ>{cnpj}</CNPJ>
+  <distNSU>
+    <ultNSU>{ult_nsu}</ultNSU>
+  </distNSU>
+</distDFeInt>"""
+
+        envelope = f"""<?xml version="1.0" encoding="utf-8"?>
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                 xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                 xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
+  <soap12:Body>
+    <nfeDistDFeInteresse xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe">
+      <nfeDadosMsg>{dist_xml}</nfeDadosMsg>
+    </nfeDistDFeInteresse>
+  </soap12:Body>
+</soap12:Envelope>"""
+
+        headers = {
+            "Content-Type": 'application/soap+xml; charset=utf-8; action="http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe/nfeDistDFeInteresse"'
+        }
+
+        resp = requests.post(
+            endpoint,
+            data=envelope.encode("utf-8"),
+            headers=headers,
+            cert=(cert_pem, key_pem),
+            timeout=60
+        )
+
+        if resp.status_code != 200:
+            return False, f"SEFAZ retornou HTTP {resp.status_code}: {resp.text[:500]}", 0
+
+        root_xml = ET.fromstring(resp.content)
+
+        def local(tag):
+            return tag.split("}", 1)[-1] if "}" in tag else tag
+
+        ret = None
+        for el in root_xml.iter():
+            if local(el.tag) == "retDistDFeInt":
+                ret = el
+                break
+
+        if ret is None:
+            return False, "Retorno da SEFAZ sem retDistDFeInt.", 0
+
+        dados = {}
+        for el in ret.iter():
+            dados[local(el.tag)] = el.text
+
+        cstat = dados.get("cStat", "")
+        xmotivo = dados.get("xMotivo", "")
+
+        if cstat not in ("137", "138"):
+            return False, f"SEFAZ: {cstat} - {xmotivo}", 0
+
+        salvos = 0
+        pasta_cliente = os.path.join(XML_DIR, str(cliente["id"]))
+        os.makedirs(pasta_cliente, exist_ok=True)
+
+        con = db()
+
+        for doczip in ret.iter():
+            if local(doczip.tag) != "docZip":
+                continue
+
+            nsu = doczip.attrib.get("NSU", "")
+            schema_xml = doczip.attrib.get("schema", "")
+
+            if not doczip.text:
+                continue
+
+            existente = con.execute(
+                "SELECT id FROM xmls_dfe WHERE cliente_id=? AND nsu=?",
+                (cliente["id"], nsu)
+            ).fetchone()
+            if existente:
+                continue
+
+            xml_gzip = base64.b64decode(doczip.text)
+            xml_conteudo = gzip.decompress(xml_gzip)
+
+            nome_arquivo = f"{nsu}_{secure_filename(schema_xml or 'dfe')}.xml"
+            caminho_xml = os.path.join(pasta_cliente, nome_arquivo)
+
+            with open(caminho_xml, "wb") as f:
+                f.write(xml_conteudo)
+
+            chave = ""
+            try:
+                xml_doc = ET.fromstring(xml_conteudo)
+                for el in xml_doc.iter():
+                    if local(el.tag) == "chNFe" and el.text:
+                        chave = el.text
+                        break
+            except Exception:
+                pass
+
+            con.execute(
+                "INSERT INTO xmls_dfe (cliente_id, nsu, schema_xml, chave, arquivo, criado_em) VALUES (?, ?, ?, ?, ?, ?)",
+                (cliente["id"], nsu, schema_xml, chave, nome_arquivo, datetime.now().strftime("%d/%m/%Y %H:%M"))
+            )
+            salvos += 1
+
+        con.commit()
+        con.close()
+
+        if salvos == 0:
+            return True, f"Consulta concluída. SEFAZ: {cstat} - {xmotivo}. Nenhum XML novo encontrado.", 0
+
+        return True, f"Consulta concluída. {salvos} XML(s) novo(s) salvo(s).", salvos
+
+    except Exception as e:
+        return False, f"Erro na consulta DF-e: {str(e)}", 0
+
+    finally:
+        for tmp in (cert_pem, key_pem):
+            if tmp and os.path.exists(tmp):
+                try:
+                    os.remove(tmp)
+                except Exception:
+                    pass
+
+
+@app.route("/clientes/xmls/<int:id>")
+@login_required("admin")
+def xmls_cliente(id):
+    con = db()
+    cliente = con.execute("SELECT * FROM clientes WHERE id=?", (id,)).fetchone()
+    if not cliente:
+        con.close()
+        flash("Cliente não encontrado.")
+        return redirect(url_for("clientes"))
+
+    xmls = con.execute(
+        "SELECT * FROM xmls_dfe WHERE cliente_id=? ORDER BY id DESC",
+        (id,)
+    ).fetchall()
+    con.close()
+
+    return render_template("xmls_cliente.html", cliente=cliente, xmls=xmls)
+
+
+@app.route("/clientes/xmls/<int:id>/buscar", methods=["POST"])
+@login_required("admin")
+def buscar_xmls_cliente(id):
+    cuf_autor = request.form.get("cuf_autor", "42").strip() or "42"
+    tp_amb = request.form.get("tp_amb", "1").strip() or "1"
+
+    con = db()
+    cliente = con.execute("SELECT * FROM clientes WHERE id=?", (id,)).fetchone()
+    con.close()
+
+    if not cliente:
+        flash("Cliente não encontrado.")
+        return redirect(url_for("clientes"))
+
+    ok, msg, qtd = consultar_dfe_sefaz(cliente, cuf_autor=cuf_autor, tp_amb=tp_amb)
+    flash(msg)
+    return redirect(url_for("xmls_cliente", id=id))
+
+
+@app.route("/clientes/xmls/<int:id>/baixar/<arquivo>")
+@login_required("admin")
+def baixar_xml_cliente(id, arquivo):
+    pasta_cliente = os.path.join(XML_DIR, str(id))
+    return send_from_directory(pasta_cliente, arquivo, as_attachment=True)
+
 
 @app.route("/status-data")
 @login_required("admin")
