@@ -18,3 +18,6 @@ Rotas úteis:
 Login admin inicial:
 - admin@admin.com
 - admin123
+
+
+FIX: Corrigido erro de bancos antigos sem coluna contabilidades.criado_em.

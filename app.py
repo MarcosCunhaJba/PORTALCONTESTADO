@@ -115,9 +115,25 @@ def init_db():
         email_enviado INTEGER DEFAULT 0
     );
     """)
+    # Autorreparo para bancos antigos que já estavam no Railway
+    ensure_column(cur, "contabilidades", "cnpj", "TEXT")
+    ensure_column(cur, "contabilidades", "telefone", "TEXT")
+    ensure_column(cur, "contabilidades", "email", "TEXT")
     ensure_column(cur, "contabilidades", "ativo", "INTEGER DEFAULT 1")
+    ensure_column(cur, "contabilidades", "criado_em", "TEXT")
+
+    ensure_column(cur, "clientes", "contabilidade_id", "INTEGER")
+    ensure_column(cur, "clientes", "ano_certificado", "INTEGER")
+    ensure_column(cur, "clientes", "senha_certificado", "TEXT")
+    ensure_column(cur, "clientes", "arquivo_certificado", "TEXT")
+    ensure_column(cur, "clientes", "criado_em", "TEXT")
     ensure_column(cur, "clientes", "ativo", "INTEGER DEFAULT 1")
+
     ensure_column(cur, "documentos", "descricao", "TEXT")
+    ensure_column(cur, "documentos", "token", "TEXT")
+    ensure_column(cur, "documentos", "enviado_em", "TEXT")
+
+    ensure_column(cur, "users", "contabilidade_id", "INTEGER")
     ensure_column(cur, "users", "criado_em", "TEXT")
 
     cur.execute("CREATE INDEX IF NOT EXISTS idx_clientes_contabilidade ON clientes(contabilidade_id)")
