@@ -1,15 +1,4 @@
-{% extends 'base.html' %}
-{% block title %}Enviar Documento{% endblock %}
-{% block page_title %}Enviar Documento{% endblock %}
-{% block content %}
-<div class="card">
-    <h2>{{cliente.razao}}</h2>
-    <form method="post" enctype="multipart/form-data" class="grid2">
-        <div class="field"><label>Mês</label><select name="mes">{% for k,v in MESES %}<option value="{{k}}" {% if k==mes %}selected{% endif %}>{{v}}</option>{% endfor %}</select></div>
-        <div class="field"><label>Ano</label><select name="ano">{% for a in ANOS %}<option value="{{a}}" {% if a==ano %}selected{% endif %}>{{a}}</option>{% endfor %}</select></div>
-        <div class="field"><label>Descrição</label><input name="descricao" placeholder="Ex: DAS, folha, balancete..."></div>
-        <div class="field"><label>Arquivo</label><input type="file" name="arquivo" required></div>
-        <div><button class="btn">Enviar documento</button></div>
-    </form>
-</div>
+
+{% extends 'base.html' %}{% block title %}Enviar Documento{% endblock %}{% block page_title %}Enviar Documento{% endblock %}{% block content %}
+<div class="card"><h2>{{cliente.razao}}</h2><form method="post" enctype="multipart/form-data" class="grid2"><div class="field"><label>Mês</label><select name="mes">{% for k,v in MESES %}<option value="{{k}}" {% if k==mes %}selected{% endif %}>{{v}}</option>{% endfor %}</select></div><div class="field"><label>Ano</label><select name="ano">{% for a in ANOS %}<option value="{{a}}" {% if a==ano %}selected{% endif %}>{{a}}</option>{% endfor %}</select></div><div class="field"><label>Descrição</label><input name="descricao" placeholder="Ex: DAS, folha, balancete..."></div><div class="field"><label>Arquivo</label><input type="file" name="arquivo" required></div><div><button class="btn">Enviar documento</button></div></form></div>
 {% endblock %}

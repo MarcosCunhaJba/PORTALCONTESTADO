@@ -1,21 +1,4 @@
-{% extends 'base.html' %}
-{% block title %}Interesses CH{% endblock %}
-{% block page_title %}Interesses CH{% endblock %}
-{% block content %}
-<div class="card">
-<table>
-<tr><th>Data/Hora</th><th>Usuário</th><th>E-mail</th><th>Contabilidade</th><th>IP</th><th>E-mail enviado</th></tr>
-{% for r in rows %}
-<tr>
-    <td>{{r.criado_em}}</td>
-    <td>{{r.usuario_nome}}</td>
-    <td>{{r.usuario_email}}</td>
-    <td>{{r.contabilidade_nome}}</td>
-    <td>{{r.ip}}</td>
-    <td>{% if r.email_enviado %}<span class="status-ok">Sim</span>{% else %}<span class="status-pend">Não</span>{% endif %}</td>
-</tr>
-{% endfor %}
-{% if not rows %}<tr><td colspan="6">Nenhum interesse registrado ainda.</td></tr>{% endif %}
-</table>
-</div>
+
+{% extends 'base.html' %}{% block title %}Interesses CH{% endblock %}{% block page_title %}Interesses CH{% endblock %}{% block content %}
+<div class="card"><table><tr><th>Data/Hora</th><th>Usuário</th><th>E-mail</th><th>Contabilidade</th><th>IP</th><th>E-mail enviado</th></tr>{% for r in rows %}<tr><td>{{r.criado_em}}</td><td>{{r.usuario_nome}}</td><td>{{r.usuario_email}}</td><td>{{r.contabilidade_nome}}</td><td>{{r.ip}}</td><td>{% if r.email_enviado %}<span class="status-ok">Sim</span>{% else %}<span class="status-pend">Não</span>{% endif %}</td></tr>{% endfor %}{% if not rows %}<tr><td colspan="6">Nenhum interesse registrado ainda.</td></tr>{% endif %}</table></div>
 {% endblock %}

@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
@@ -10,9 +11,8 @@
 <div class="app">
     <aside class="sidebar">
         <div class="brand">
-            <img src="{{ url_for('static', filename='logo_ch_contestado.png') }}" alt="CH Contestado">
+            <div class="logo-text">CH<br><span>Contestado</span></div>
         </div>
-
         {% if user %}
         <nav class="nav">
             {% if user.tipo == 'admin' %}
@@ -28,13 +28,11 @@
             <a href="{{ url_for('logout') }}">Sair</a>
         </nav>
         {% endif %}
-
         <div class="side-footer">
             <strong>SOFTWARE DE GESTÃO</strong>
             <span>49 9 9176-2559</span>
         </div>
     </aside>
-
     <main class="main">
         <div class="topbar">
             <div>
@@ -42,7 +40,6 @@
                 <p>Gestão de documentos contábeis</p>
             </div>
         </div>
-
         {% with messages = get_flashed_messages() %}
             {% if messages %}
                 {% for m in messages %}
@@ -50,27 +47,18 @@
                 {% endfor %}
             {% endif %}
         {% endwith %}
-
         {% block content %}{% endblock %}
     </main>
 </div>
-
 {% if session.get('tipo') == 'contabilidade' %}
 <div id="popup-ch" class="popup-mini" style="display:none;">
-    <div class="popup-mini-header">
-        <span>🚀 Parceria CH</span>
-        <button type="button" onclick="fecharPopupMini()" class="popup-mini-close">×</button>
-    </div>
+    <div class="popup-mini-header"><span>🚀 Parceria CH</span><button type="button" onclick="fecharPopupMini()" class="popup-mini-close">×</button></div>
     <div class="popup-mini-content">
         <strong>Quer aumentar seu faturamento?</strong>
         <p>Indique a <b>CH Contestado</b> e entregue mais valor aos seus clientes.</p>
-        <a href="https://wa.me/554991762559?text=Olá, vi a oportunidade de parceria no sistema CH Contestado"
-           target="_blank"
-           onclick="registrarInteresseCH()"
-           class="popup-mini-btn">📲 Quero ser parceiro</a>
+        <a href="https://wa.me/554991762559?text=Olá, vi a oportunidade de parceria no sistema CH Contestado" target="_blank" onclick="registrarInteresseCH()" class="popup-mini-btn">📲 Quero ser parceiro</a>
     </div>
 </div>
-
 <script>
 function mostrarPopupMini(){
     if(window.location.pathname === "/"){ return; }
@@ -81,14 +69,10 @@ function mostrarPopupMini(){
     }
 }
 function fecharPopupMini(){
-    if(document.getElementById("popup-ch")){
-        document.getElementById("popup-ch").style.display = "none";
-    }
+    if(document.getElementById("popup-ch")){ document.getElementById("popup-ch").style.display = "none"; }
     localStorage.setItem("popup_ch_mini", new Date().toDateString());
 }
-function registrarInteresseCH(){
-    fetch("{{ url_for('registrar_interesse_ch') }}").catch(function(){});
-}
+function registrarInteresseCH(){ fetch("{{ url_for('registrar_interesse_ch') }}").catch(function(){}); }
 setTimeout(mostrarPopupMini, 2000);
 </script>
 {% endif %}

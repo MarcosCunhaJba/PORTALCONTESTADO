@@ -1,34 +1,6 @@
-{% extends 'base.html' %}
-{% block title %}Área da Contabilidade{% endblock %}
-{% block page_title %}Área da Contabilidade{% endblock %}
-{% block content %}
-<div class="promo-ch">
-  <div class="promo-ch-text">
-    <strong>🚀 Contador, precisa de um sistema confiável para indicar aos seus clientes?</strong>
-    <span>A CH Contestado entrega sistema de gestão completo, suporte humano e soluções para empresas que precisam vender, emitir notas e controlar melhor o negócio.</span>
-  </div>
-  <a class="promo-ch-btn" href="https://wa.me/554991762559?text=Olá, vi a oportunidade de parceria no sistema CH Contestado" target="_blank" onclick="registrarInteresseCH()">📲 Falar com a CH</a>
-</div>
 
-<div class="card">
-<form class="filters">
-    <div class="field"><label>Buscar CNPJ</label><input name="cnpj" value="{{cnpj}}" placeholder="Digite o CNPJ"></div>
-    <div class="field"><label>Mês</label><select name="mes">{% for k,v in meses %}<option value="{{k}}" {% if k==mes %}selected{% endif %}>{{v}}</option>{% endfor %}</select></div>
-    <div class="field"><label>Ano</label><select name="ano">{% for a in anos %}<option value="{{a}}" {% if a==ano %}selected{% endif %}>{{a}}</option>{% endfor %}</select></div>
-    <button class="btn">Buscar</button>
-</form>
-</div>
-
-<div class="card">
-<table>
-<tr><th>Cliente</th><th>CNPJ</th><th>Documento</th></tr>
-{% for r in rows %}
-<tr>
-    <td>{{r.razao}}</td>
-    <td>{{r.cnpj}}</td>
-    <td>{% if r.arquivo %}<a class="btn" href="{{ url_for('download', arquivo=r.arquivo) }}">Baixar</a>{% else %}<span class="status-pend">Sem arquivo no mês</span>{% endif %}</td>
-</tr>
-{% endfor %}
-</table>
-</div>
+{% extends 'base.html' %}{% block title %}Área da Contabilidade{% endblock %}{% block page_title %}Área da Contabilidade{% endblock %}{% block content %}
+<div class="promo-ch"><div class="promo-ch-text"><strong>🚀 Contador, precisa de um sistema confiável para indicar aos seus clientes?</strong><span>A CH Contestado entrega sistema de gestão completo, suporte humano e soluções para empresas que precisam vender, emitir notas e controlar melhor o negócio.</span></div><a class="promo-ch-btn" href="https://wa.me/554991762559?text=Olá, vi a oportunidade de parceria no sistema CH Contestado" target="_blank" onclick="registrarInteresseCH()">📲 Falar com a CH</a></div>
+<div class="card"><form class="filters"><div class="field"><label>Buscar CNPJ</label><input name="cnpj" value="{{cnpj}}" placeholder="Digite o CNPJ"></div><div class="field"><label>Mês</label><select name="mes">{% for k,v in meses %}<option value="{{k}}" {% if k==mes %}selected{% endif %}>{{v}}</option>{% endfor %}</select></div><div class="field"><label>Ano</label><select name="ano">{% for a in anos %}<option value="{{a}}" {% if a==ano %}selected{% endif %}>{{a}}</option>{% endfor %}</select></div><button class="btn">Buscar</button></form></div>
+<div class="card"><table><tr><th>Cliente</th><th>CNPJ</th><th>Documento</th></tr>{% for r in rows %}<tr><td>{{r.razao}}</td><td>{{r.cnpj}}</td><td>{% if r.arquivo %}<a class="btn" href="{{ url_for('download', arquivo=r.arquivo) }}">Baixar</a>{% else %}<span class="status-pend">Sem arquivo no mês</span>{% endif %}</td></tr>{% endfor %}</table></div>
 {% endblock %}
