@@ -21,3 +21,6 @@ Login admin inicial:
 
 
 FIX: Corrigido erro de bancos antigos sem coluna contabilidades.criado_em.
+
+
+FIX_UPLOAD_ZIP_EMAIL: Autorreparo completo de colunas antigas em documentos/envios para evitar erro 500 em upload, gerar ZIP e e-mail.

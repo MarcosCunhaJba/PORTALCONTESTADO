@@ -115,13 +115,24 @@ def init_db():
         email_enviado INTEGER DEFAULT 0
     );
     """)
-    # Autorreparo para bancos antigos que já estavam no Railway
+    # Autorreparo completo para bancos antigos que já estavam no Railway
+    # Isso evita erro 500 quando uma tabela antiga não tem alguma coluna nova.
+    ensure_column(cur, "users", "nome", "TEXT")
+    ensure_column(cur, "users", "email", "TEXT")
+    ensure_column(cur, "users", "senha_hash", "TEXT")
+    ensure_column(cur, "users", "tipo", "TEXT")
+    ensure_column(cur, "users", "contabilidade_id", "INTEGER")
+    ensure_column(cur, "users", "criado_em", "TEXT")
+
+    ensure_column(cur, "contabilidades", "nome", "TEXT")
     ensure_column(cur, "contabilidades", "cnpj", "TEXT")
     ensure_column(cur, "contabilidades", "telefone", "TEXT")
     ensure_column(cur, "contabilidades", "email", "TEXT")
     ensure_column(cur, "contabilidades", "ativo", "INTEGER DEFAULT 1")
     ensure_column(cur, "contabilidades", "criado_em", "TEXT")
 
+    ensure_column(cur, "clientes", "razao", "TEXT")
+    ensure_column(cur, "clientes", "cnpj", "TEXT")
     ensure_column(cur, "clientes", "contabilidade_id", "INTEGER")
     ensure_column(cur, "clientes", "ano_certificado", "INTEGER")
     ensure_column(cur, "clientes", "senha_certificado", "TEXT")
@@ -129,12 +140,32 @@ def init_db():
     ensure_column(cur, "clientes", "criado_em", "TEXT")
     ensure_column(cur, "clientes", "ativo", "INTEGER DEFAULT 1")
 
+    ensure_column(cur, "documentos", "cliente_id", "INTEGER")
+    ensure_column(cur, "documentos", "mes", "TEXT")
+    ensure_column(cur, "documentos", "ano", "INTEGER")
     ensure_column(cur, "documentos", "descricao", "TEXT")
+    ensure_column(cur, "documentos", "nome_original", "TEXT")
+    ensure_column(cur, "documentos", "arquivo", "TEXT")
     ensure_column(cur, "documentos", "token", "TEXT")
     ensure_column(cur, "documentos", "enviado_em", "TEXT")
 
-    ensure_column(cur, "users", "contabilidade_id", "INTEGER")
-    ensure_column(cur, "users", "criado_em", "TEXT")
+    ensure_column(cur, "envios", "contabilidade_id", "INTEGER")
+    ensure_column(cur, "envios", "mes", "TEXT")
+    ensure_column(cur, "envios", "ano", "INTEGER")
+    ensure_column(cur, "envios", "arquivo_zip", "TEXT")
+    ensure_column(cur, "envios", "token", "TEXT")
+    ensure_column(cur, "envios", "email_destino", "TEXT")
+    ensure_column(cur, "envios", "enviado_email", "INTEGER DEFAULT 0")
+    ensure_column(cur, "envios", "criado_em", "TEXT")
+
+    ensure_column(cur, "interesses_ch", "user_id", "INTEGER")
+    ensure_column(cur, "interesses_ch", "usuario_nome", "TEXT")
+    ensure_column(cur, "interesses_ch", "usuario_email", "TEXT")
+    ensure_column(cur, "interesses_ch", "contabilidade_id", "INTEGER")
+    ensure_column(cur, "interesses_ch", "contabilidade_nome", "TEXT")
+    ensure_column(cur, "interesses_ch", "criado_em", "TEXT")
+    ensure_column(cur, "interesses_ch", "ip", "TEXT")
+    ensure_column(cur, "interesses_ch", "email_enviado", "INTEGER DEFAULT 0")
 
     cur.execute("CREATE INDEX IF NOT EXISTS idx_clientes_contabilidade ON clientes(contabilidade_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_clientes_cnpj ON clientes(cnpj)")
@@ -734,6 +765,18 @@ def backup_completo():
                     rel = os.path.relpath(caminho, DATA_DIR)
                     z.write(caminho, rel)
     return send_from_directory(ZIP_DIR, nome_zip, as_attachment=True)
+
+
+@app.errorhandler(Exception)
+def tratar_erro_geral(e):
+    # Mostra erro amigável e grava no log do Railway.
+    print("ERRO GERAL:", repr(e))
+    try:
+        flash(f"Erro interno: {str(e)}")
+        return redirect(url_for("dashboard"))
+    except Exception:
+        return f"Erro interno: {str(e)}", 500
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8090)))
