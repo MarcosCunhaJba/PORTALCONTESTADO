@@ -758,7 +758,7 @@ def gerar_zip_contabilidade(contabilidade_id, mes, ano):
         FROM documentos d
         JOIN clientes c ON c.id=d.cliente_id
         WHERE c.contabilidade_id=? AND d.mes=? AND d.ano=?
-        ORDER BY c.razao
+        ORDER BY c.razao, d.id
     """, (contabilidade_id, mes, ano)).fetchall()
 
     filtro_sql = filtro_xml_mes_sql()
@@ -767,7 +767,7 @@ def gerar_zip_contabilidade(contabilidade_id, mes, ano):
         FROM xmls_dfe x
         JOIN clientes c ON c.id=x.cliente_id
         WHERE c.contabilidade_id=? AND {filtro_sql}
-        ORDER BY c.razao, x.tipo_doc, x.numero_nf
+        ORDER BY c.razao, x.tipo_doc, x.numero_nf, x.id
     """, (contabilidade_id, mes, ano, mes, str(ano), f"%/{mes}/{ano}%")).fetchall()
 
     if not cont or (not docs and not xmls):
@@ -1164,12 +1164,12 @@ def xmls_cliente(id):
     filtro_sql = filtro_xml_mes_sql()
 
     emitidas = con.execute(
-        f"SELECT * FROM xmls_dfe x WHERE cliente_id=? AND emit_cnpj=? AND {filtro_sql} ORDER BY tipo_doc, numero_nf, x.id DESC",
+        f"SELECT * FROM xmls_dfe x WHERE cliente_id=? AND emit_cnpj=? AND {filtro_sql} ORDER BY x.tipo_doc, x.numero_nf, x.id DESC",
         (id, cnpj_cliente, mes, ano, mes, str(ano), f"%/{mes}/{ano}%")
     ).fetchall()
 
     recebidas = con.execute(
-        f"SELECT * FROM xmls_dfe x WHERE cliente_id=? AND (dest_cnpj=? OR (COALESCE(emit_cnpj,'')='' AND COALESCE(dest_cnpj,'')='')) AND {filtro_sql} ORDER BY tipo_doc, numero_nf, x.id DESC",
+        f"SELECT * FROM xmls_dfe x WHERE cliente_id=? AND (dest_cnpj=? OR (COALESCE(emit_cnpj,'')='' AND COALESCE(dest_cnpj,'')='')) AND {filtro_sql} ORDER BY x.tipo_doc, x.numero_nf, x.id DESC",
         (id, cnpj_cliente, mes, ano, mes, str(ano), f"%/{mes}/{ano}%")
     ).fetchall()
 
@@ -1214,7 +1214,7 @@ def baixar_todos_xml_cliente(id):
     con = db()
     cliente = con.execute("SELECT * FROM clientes WHERE id=?", (id,)).fetchone()
     filtro_sql = filtro_xml_mes_sql()
-    xmls = con.execute(f"SELECT * FROM xmls_dfe x WHERE cliente_id=? AND {filtro_sql} ORDER BY tipo_doc, numero_nf, x.id DESC",
+    xmls = con.execute(f"SELECT * FROM xmls_dfe x WHERE cliente_id=? AND {filtro_sql} ORDER BY x.tipo_doc, x.numero_nf, x.id DESC",
                        (id, mes, ano, mes, str(ano), f"%/{mes}/{ano}%")).fetchall()
     con.close()
 
@@ -1265,12 +1265,12 @@ def xmls_cliente_contabilidade(id):
     filtro_sql = filtro_xml_mes_sql()
 
     emitidas = con.execute(
-        f"SELECT * FROM xmls_dfe x WHERE cliente_id=? AND emit_cnpj=? AND {filtro_sql} ORDER BY tipo_doc, numero_nf, x.id DESC",
+        f"SELECT * FROM xmls_dfe x WHERE cliente_id=? AND emit_cnpj=? AND {filtro_sql} ORDER BY x.tipo_doc, x.numero_nf, x.id DESC",
         (id, cnpj_cliente, mes, ano, mes, str(ano), f"%/{mes}/{ano}%")
     ).fetchall()
 
     recebidas = con.execute(
-        f"SELECT * FROM xmls_dfe x WHERE cliente_id=? AND (dest_cnpj=? OR (COALESCE(emit_cnpj,'')='' AND COALESCE(dest_cnpj,'')='')) AND {filtro_sql} ORDER BY tipo_doc, numero_nf, x.id DESC",
+        f"SELECT * FROM xmls_dfe x WHERE cliente_id=? AND (dest_cnpj=? OR (COALESCE(emit_cnpj,'')='' AND COALESCE(dest_cnpj,'')='')) AND {filtro_sql} ORDER BY x.tipo_doc, x.numero_nf, x.id DESC",
         (id, cnpj_cliente, mes, ano, mes, str(ano), f"%/{mes}/{ano}%")
     ).fetchall()
 
@@ -1309,7 +1309,7 @@ def baixar_todos_xml_cliente_contabilidade(id):
     ).fetchone()
 
     filtro_sql = filtro_xml_mes_sql()
-    xmls = con.execute(f"SELECT * FROM xmls_dfe x WHERE cliente_id=? AND {filtro_sql} ORDER BY tipo_doc, numero_nf, x.id DESC",
+    xmls = con.execute(f"SELECT * FROM xmls_dfe x WHERE cliente_id=? AND {filtro_sql} ORDER BY x.tipo_doc, x.numero_nf, x.id DESC",
                        (id, mes, ano, mes, str(ano), f"%/{mes}/{ano}%")).fetchall()
     con.close()
 
