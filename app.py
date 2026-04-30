@@ -210,6 +210,8 @@ def init_db():
     ensure_column(cur, "xmls_dfe", "tipo_doc", "TEXT")
     ensure_column(cur, "xmls_dfe", "emit_cnpj", "TEXT")
     ensure_column(cur, "xmls_dfe", "dest_cnpj", "TEXT")
+    ensure_column(cur, "xmls_dfe", "direcao", "TEXT")
+    ensure_column(cur, "xmls_dfe", "modelo_doc", "TEXT")
     ensure_column(cur, "dfe_status", "cliente_id", "INTEGER")
     ensure_column(cur, "dfe_status", "ult_nsu", "TEXT")
     ensure_column(cur, "dfe_status", "max_nsu", "TEXT")
@@ -790,7 +792,7 @@ def gerar_zip_contabilidade(contabilidade_id, mes, ano):
             if os.path.exists(origem_xml):
                 pasta_cliente_xml = secure_filename(x["razao"]) or f"cliente_{x['cliente_id']}"
                 tipo = x["tipo_doc"] or "OUTROS"
-                z.write(origem_xml, f"XMLS/{pasta_cliente_xml}/{tipo}/{x['arquivo']}")
+                z.write(origem_xml, f"XMLS/{pasta_cliente_xml}/{(x['direcao'] or 'RECEBIDA')}/{tipo}/{x['arquivo']}")
 
     con.execute("""
         INSERT INTO envios (contabilidade_id, mes, ano, arquivo_zip, token, email_destino, enviado_email, criado_em)
@@ -891,6 +893,7 @@ def extrair_dados_nfe(xml_conteudo, cnpj_cliente):
     def local(tag):
         return tag.split("}", 1)[-1] if "}" in tag else tag
 
+    cnpj_cliente = somente_digitos(cnpj_cliente)
     chave = ""
     numero = ""
     valor = ""
@@ -899,19 +902,44 @@ def extrair_dados_nfe(xml_conteudo, cnpj_cliente):
     mes_ref = ""
     ano_ref = None
     tipo_doc = "OUTROS"
+    direcao = ""
+    eh_documento_fiscal = False
 
     try:
         xml_doc = ET.fromstring(xml_conteudo)
+        root_name = local(xml_doc.tag)
+
+        # Ignora eventos: ciência da operação, confirmação, cancelamento, manifestação etc.
+        nomes_evento = {"procEventoNFe", "resEvento", "evento", "retEvento", "procEventoCTe", "procEventoMDFe"}
+        if root_name in nomes_evento or "Evento" in root_name:
+            return chave, numero, valor, emit_cnpj, dest_cnpj, mes_ref, ano_ref, tipo_doc, direcao, False
+
+        # Aceita somente documentos fiscais ou resumos de documentos fiscais.
+        nomes_doc = {
+            "nfeProc", "NFe", "resNFe",
+            "cteProc", "CTe", "resCTe",
+            "mdfeProc", "MDFe", "resMDFe"
+        }
+        eh_documento_fiscal = root_name in nomes_doc
 
         for el in xml_doc.iter():
             nome = local(el.tag)
+
             if nome == "chNFe" and el.text and not chave:
                 chave = el.text.strip()
+                eh_documento_fiscal = True
+            elif nome == "chCTe" and el.text and not chave:
+                chave = el.text.strip()
+                eh_documento_fiscal = True
+            elif nome == "chMDFe" and el.text and not chave:
+                chave = el.text.strip()
+                eh_documento_fiscal = True
             elif nome == "nNF" and el.text and not numero:
                 numero = el.text.strip().lstrip("0") or "0"
             elif nome == "vNF" and el.text and not valor:
                 valor = el.text.strip()
 
+        # Emitente em XML completo: <emit><CNPJ>
         for emit in xml_doc.iter():
             if local(emit.tag) == "emit":
                 for filho in emit:
@@ -920,6 +948,7 @@ def extrair_dados_nfe(xml_conteudo, cnpj_cliente):
                         break
                 break
 
+        # Destinatário em XML completo: <dest><CNPJ>
         for dest in xml_doc.iter():
             if local(dest.tag) == "dest":
                 for filho in dest:
@@ -927,6 +956,14 @@ def extrair_dados_nfe(xml_conteudo, cnpj_cliente):
                         dest_cnpj = somente_digitos(filho.text)
                         break
                 break
+
+        # Resumo resNFe não tem bloco emit; geralmente possui CNPJ do emitente direto.
+        # Se ainda não achou emitente, pega o primeiro CNPJ solto do resumo.
+        if not emit_cnpj and root_name in {"resNFe", "resCTe", "resMDFe"}:
+            for el in xml_doc.iter():
+                if local(el.tag) == "CNPJ" and el.text:
+                    emit_cnpj = somente_digitos(el.text)
+                    break
 
         if chave and len(chave) >= 34:
             aa = chave[2:4]
@@ -936,18 +973,33 @@ def extrair_dados_nfe(xml_conteudo, cnpj_cliente):
             ano_ref = int("20" + aa) if aa.isdigit() else None
             if not numero:
                 numero = chave[25:34].lstrip("0") or "0"
+
             if modelo == "55":
                 tipo_doc = "NFE"
             elif modelo == "65":
                 tipo_doc = "NFCE"
             elif modelo == "57":
                 tipo_doc = "CTE"
+            elif modelo == "58":
+                tipo_doc = "MDFE"
             else:
                 tipo_doc = "OUTROS"
-    except Exception:
-        pass
 
-    return chave, numero, valor, emit_cnpj, dest_cnpj, mes_ref, ano_ref, tipo_doc
+        # Classificação entrada/saída:
+        # - Emitente = cliente => saída/emitida
+        # - Destinatário = cliente => entrada/recebida
+        # - Resumo sem destinatário: se emitente != cliente, considera recebida, pois veio no interesse do CNPJ consultado.
+        if emit_cnpj == cnpj_cliente:
+            direcao = "EMITIDA"
+        elif dest_cnpj == cnpj_cliente:
+            direcao = "RECEBIDA"
+        elif emit_cnpj and emit_cnpj != cnpj_cliente and root_name in {"resNFe", "resCTe", "resMDFe"}:
+            direcao = "RECEBIDA"
+
+        return chave, numero, valor, emit_cnpj, dest_cnpj, mes_ref, ano_ref, tipo_doc, direcao, eh_documento_fiscal
+
+    except Exception:
+        return chave, numero, valor, emit_cnpj, dest_cnpj, mes_ref, ano_ref, tipo_doc, direcao, False
 
 
 def atualizar_status_dfe(cliente_id, ult_nsu, max_nsu, cstat, xmotivo):
@@ -1114,16 +1166,19 @@ def consultar_dfe_sefaz(cliente, cuf_autor="42", tp_amb="1"):
             with open(caminho_xml, "wb") as f:
                 f.write(xml_conteudo)
 
-            chave, numero_nf, valor_nf, emit_cnpj, dest_cnpj, mes_ref, ano_ref, tipo_doc = extrair_dados_nfe(xml_conteudo, cnpj)
+            chave, numero_nf, valor_nf, emit_cnpj, dest_cnpj, mes_ref, ano_ref, tipo_doc, direcao, eh_documento_fiscal = extrair_dados_nfe(xml_conteudo, cnpj)
 
-            # Salva XMLs emitidos pela empresa ou recebidos pela empresa.
-            # Quando XML resumido não traz emitente/destinatário, mantém por ser retorno de interesse do CNPJ consultado.
-            if (emit_cnpj or dest_cnpj) and emit_cnpj != cnpj and dest_cnpj != cnpj:
+            # Salva somente documento fiscal, nunca evento.
+            if not eh_documento_fiscal:
+                continue
+
+            # Salva somente documentos fiscais de saída ou entrada relacionados ao CNPJ do cliente.
+            if direcao not in ("EMITIDA", "RECEBIDA"):
                 continue
 
             con.execute(
-                "INSERT INTO xmls_dfe (cliente_id, nsu, schema_xml, chave, arquivo, criado_em, numero_nf, valor_nf, mes_ref, ano_ref, tipo_doc, emit_cnpj, dest_cnpj) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (cliente["id"], nsu, schema_xml, chave, nome_arquivo, datetime.now().strftime("%d/%m/%Y %H:%M"), numero_nf, valor_nf, mes_ref, ano_ref, tipo_doc, emit_cnpj, dest_cnpj)
+                "INSERT INTO xmls_dfe (cliente_id, nsu, schema_xml, chave, arquivo, criado_em, numero_nf, valor_nf, mes_ref, ano_ref, tipo_doc, emit_cnpj, dest_cnpj, direcao, modelo_doc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (cliente["id"], nsu, schema_xml, chave, nome_arquivo, datetime.now().strftime("%d/%m/%Y %H:%M"), numero_nf, valor_nf, mes_ref, ano_ref, tipo_doc, emit_cnpj, dest_cnpj, direcao, tipo_doc)
             )
             salvos += 1
 
@@ -1164,13 +1219,25 @@ def xmls_cliente(id):
     filtro_sql = filtro_xml_mes_sql()
 
     emitidas = con.execute(
-        f"SELECT * FROM xmls_dfe x WHERE cliente_id=? AND emit_cnpj=? AND {filtro_sql} ORDER BY x.tipo_doc, x.numero_nf, x.id DESC",
+        f"""SELECT * FROM xmls_dfe x
+            WHERE cliente_id=?
+              AND (direcao='EMITIDA' OR (COALESCE(direcao,'')='' AND emit_cnpj=?))
+              AND {filtro_sql}
+            ORDER BY x.tipo_doc, x.numero_nf, x.id DESC""",
         (id, cnpj_cliente, mes, ano, mes, str(ano), f"%/{mes}/{ano}%")
     ).fetchall()
 
     recebidas = con.execute(
-        f"SELECT * FROM xmls_dfe x WHERE cliente_id=? AND (dest_cnpj=? OR (COALESCE(emit_cnpj,'')='' AND COALESCE(dest_cnpj,'')='')) AND {filtro_sql} ORDER BY x.tipo_doc, x.numero_nf, x.id DESC",
-        (id, cnpj_cliente, mes, ano, mes, str(ano), f"%/{mes}/{ano}%")
+        f"""SELECT * FROM xmls_dfe x
+            WHERE cliente_id=?
+              AND (
+                    direcao='RECEBIDA'
+                    OR (COALESCE(direcao,'')='' AND dest_cnpj=?)
+                    OR (COALESCE(direcao,'')='' AND COALESCE(emit_cnpj,'')<>? AND COALESCE(dest_cnpj,'')='')
+                  )
+              AND {filtro_sql}
+            ORDER BY x.tipo_doc, x.numero_nf, x.id DESC""",
+        (id, cnpj_cliente, cnpj_cliente, mes, ano, mes, str(ano), f"%/{mes}/{ano}%")
     ).fetchall()
 
     con.close()
@@ -1239,7 +1306,7 @@ def baixar_todos_xml_cliente(id):
             caminho_xml = os.path.join(pasta_cliente, x["arquivo"])
             if os.path.exists(caminho_xml):
                 tipo = x["tipo_doc"] or "OUTROS"
-                z.write(caminho_xml, os.path.join(nome_base, tipo, x["arquivo"]))
+                z.write(caminho_xml, os.path.join(nome_base, (x["direcao"] or "RECEBIDA"), tipo, x["arquivo"]))
 
     return send_from_directory(pasta_zip, nome_zip, as_attachment=True)
 
@@ -1265,13 +1332,25 @@ def xmls_cliente_contabilidade(id):
     filtro_sql = filtro_xml_mes_sql()
 
     emitidas = con.execute(
-        f"SELECT * FROM xmls_dfe x WHERE cliente_id=? AND emit_cnpj=? AND {filtro_sql} ORDER BY x.tipo_doc, x.numero_nf, x.id DESC",
+        f"""SELECT * FROM xmls_dfe x
+            WHERE cliente_id=?
+              AND (direcao='EMITIDA' OR (COALESCE(direcao,'')='' AND emit_cnpj=?))
+              AND {filtro_sql}
+            ORDER BY x.tipo_doc, x.numero_nf, x.id DESC""",
         (id, cnpj_cliente, mes, ano, mes, str(ano), f"%/{mes}/{ano}%")
     ).fetchall()
 
     recebidas = con.execute(
-        f"SELECT * FROM xmls_dfe x WHERE cliente_id=? AND (dest_cnpj=? OR (COALESCE(emit_cnpj,'')='' AND COALESCE(dest_cnpj,'')='')) AND {filtro_sql} ORDER BY x.tipo_doc, x.numero_nf, x.id DESC",
-        (id, cnpj_cliente, mes, ano, mes, str(ano), f"%/{mes}/{ano}%")
+        f"""SELECT * FROM xmls_dfe x
+            WHERE cliente_id=?
+              AND (
+                    direcao='RECEBIDA'
+                    OR (COALESCE(direcao,'')='' AND dest_cnpj=?)
+                    OR (COALESCE(direcao,'')='' AND COALESCE(emit_cnpj,'')<>? AND COALESCE(dest_cnpj,'')='')
+                  )
+              AND {filtro_sql}
+            ORDER BY x.tipo_doc, x.numero_nf, x.id DESC""",
+        (id, cnpj_cliente, cnpj_cliente, mes, ano, mes, str(ano), f"%/{mes}/{ano}%")
     ).fetchall()
 
     con.close()
@@ -1334,7 +1413,7 @@ def baixar_todos_xml_cliente_contabilidade(id):
             caminho_xml = os.path.join(pasta_cliente, x["arquivo"])
             if os.path.exists(caminho_xml):
                 tipo = x["tipo_doc"] or "OUTROS"
-                z.write(caminho_xml, os.path.join(nome_base, tipo, x["arquivo"]))
+                z.write(caminho_xml, os.path.join(nome_base, (x["direcao"] or "RECEBIDA"), tipo, x["arquivo"]))
 
     return send_from_directory(pasta_zip, nome_zip, as_attachment=True)
 
