@@ -1,0 +1,60 @@
+{% extends 'base.html' %}
+{% block title %}Storage{% endblock %}
+{% block page_title %}Storage do Sistema{% endblock %}
+{% block content %}
+
+<div class="card">
+    <h2>Uso do armazenamento</h2>
+    <p style="color:#64748b;">Use esta tela para descobrir o que está ocupando espaço no volume do Railway.</p>
+</div>
+
+<div class="cards">
+    {% for item in itens %}
+    <div class="card metric">
+        <span>{{ item.nome }}</span>
+        <b style="font-size:24px;">{{ item.tamanho }}</b>
+        <p style="color:#64748b;margin:6px 0 0;">{{ item.arquivos }} arquivo(s)</p>
+        <small style="color:#94a3b8;">{{ item.caminho }}</small>
+    </div>
+    {% endfor %}
+</div>
+
+<div class="card">
+    <h3>Limpeza segura</h3>
+    <p style="color:#64748b;">ZIPs são arquivos temporários gerados para download/envio. Apagar ZIPs não remove clientes, XMLs, documentos, certificados nem banco.</p>
+
+    <form method="post" action="{{ url_for('limpar_zips') }}" onsubmit="return confirm('Apagar TODOS os ZIPs temporários?');" style="display:inline-block;margin-right:8px;">
+        <button class="btn btn-danger">Limpar TODOS os ZIPs temporários</button>
+    </form>
+
+    <form method="post" action="{{ url_for('limpar_zips_antigos') }}" style="display:inline-flex;gap:8px;align-items:center;">
+        <label>Dias:</label>
+        <input name="dias" value="1" style="width:80px;min-width:80px;">
+        <button class="btn btn-yellow">Limpar ZIPs antigos</button>
+    </form>
+
+    <form method="post" action="{{ url_for('vacuum_db') }}" onsubmit="return confirm('Otimizar banco SQLite agora?');" style="margin-top:12px;">
+        <button class="btn btn-light">Otimizar banco SQLite (VACUUM)</button>
+    </form>
+</div>
+
+<div class="card">
+    <h3>Maiores arquivos dentro de /data</h3>
+    <table>
+        <tr>
+            <th>Arquivo</th>
+            <th>Tamanho</th>
+        </tr>
+        {% for arq in maiores %}
+        <tr>
+            <td>{{ arq.arquivo }}</td>
+            <td>{{ arq.tamanho }}</td>
+        </tr>
+        {% endfor %}
+        {% if not maiores %}
+        <tr><td colspan="2">Nenhum arquivo encontrado.</td></tr>
+        {% endif %}
+    </table>
+</div>
+
+{% endblock %}

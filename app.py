@@ -1417,6 +1417,141 @@ def baixar_todos_xml_cliente_contabilidade(id):
 
     return send_from_directory(pasta_zip, nome_zip, as_attachment=True)
 
+
+# =========================================================
+# PAINEL DE STORAGE
+# =========================================================
+
+def tamanho_bytes(caminho):
+    total = 0
+    if os.path.isfile(caminho):
+        return os.path.getsize(caminho)
+    for raiz, pastas, arquivos in os.walk(caminho):
+        for arquivo in arquivos:
+            try:
+                total += os.path.getsize(os.path.join(raiz, arquivo))
+            except Exception:
+                pass
+    return total
+
+
+def formatar_tamanho(bytes_total):
+    for unidade in ["B", "KB", "MB", "GB", "TB"]:
+        if bytes_total < 1024:
+            return f"{bytes_total:.2f} {unidade}"
+        bytes_total /= 1024
+    return f"{bytes_total:.2f} PB"
+
+
+@app.route("/admin/storage")
+@login_required("admin")
+def painel_storage():
+    caminhos = [
+        ("Banco SQLite", DB_PATH),
+        ("Uploads - Documentos", DOC_DIR),
+        ("Uploads - Certificados", CERT_DIR),
+        ("XMLs", XML_DIR if "XML_DIR" in globals() else os.path.join(UPLOAD_DIR, "xmls")),
+        ("ZIPs temporários", ZIP_DIR),
+        ("Uploads total", UPLOAD_DIR),
+        ("Data total", DATA_DIR),
+    ]
+
+    itens = []
+    for nome, caminho in caminhos:
+        tamanho = tamanho_bytes(caminho) if os.path.exists(caminho) else 0
+        qtd_arquivos = 0
+        if os.path.isdir(caminho):
+            for _, _, arquivos in os.walk(caminho):
+                qtd_arquivos += len(arquivos)
+        elif os.path.isfile(caminho):
+            qtd_arquivos = 1
+
+        itens.append({
+            "nome": nome,
+            "caminho": caminho,
+            "bytes": tamanho,
+            "tamanho": formatar_tamanho(tamanho),
+            "arquivos": qtd_arquivos
+        })
+
+    maiores = []
+    for raiz, pastas, arquivos in os.walk(DATA_DIR):
+        for arquivo in arquivos:
+            caminho = os.path.join(raiz, arquivo)
+            try:
+                tamanho = os.path.getsize(caminho)
+                maiores.append({
+                    "arquivo": os.path.relpath(caminho, DATA_DIR),
+                    "bytes": tamanho,
+                    "tamanho": formatar_tamanho(tamanho)
+                })
+            except Exception:
+                pass
+
+    maiores = sorted(maiores, key=lambda x: x["bytes"], reverse=True)[:30]
+
+    return render_template("storage.html", itens=itens, maiores=maiores)
+
+
+@app.route("/admin/storage/limpar-zips", methods=["POST"])
+@login_required("admin")
+def limpar_zips():
+    apagados = 0
+    liberado = 0
+
+    if os.path.exists(ZIP_DIR):
+        for raiz, pastas, arquivos in os.walk(ZIP_DIR):
+            for arquivo in arquivos:
+                caminho = os.path.join(raiz, arquivo)
+                try:
+                    liberado += os.path.getsize(caminho)
+                    os.remove(caminho)
+                    apagados += 1
+                except Exception:
+                    pass
+
+    flash(f"ZIPs temporários apagados: {apagados}. Espaço liberado: {formatar_tamanho(liberado)}.")
+    return redirect(url_for("painel_storage"))
+
+
+@app.route("/admin/storage/limpar-zips-antigos", methods=["POST"])
+@login_required("admin")
+def limpar_zips_antigos():
+    import time
+    dias = int(request.form.get("dias", 1))
+    limite = time.time() - (dias * 86400)
+    apagados = 0
+    liberado = 0
+
+    if os.path.exists(ZIP_DIR):
+        for raiz, pastas, arquivos in os.walk(ZIP_DIR):
+            for arquivo in arquivos:
+                caminho = os.path.join(raiz, arquivo)
+                try:
+                    if os.path.getmtime(caminho) < limite:
+                        liberado += os.path.getsize(caminho)
+                        os.remove(caminho)
+                        apagados += 1
+                except Exception:
+                    pass
+
+    flash(f"ZIPs com mais de {dias} dia(s) apagados: {apagados}. Espaço liberado: {formatar_tamanho(liberado)}.")
+    return redirect(url_for("painel_storage"))
+
+
+@app.route("/admin/storage/vacuum-db", methods=["POST"])
+@login_required("admin")
+def vacuum_db():
+    antes = os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else 0
+    con = db()
+    con.execute("VACUUM")
+    con.close()
+    depois = os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else 0
+
+    flash(f"Banco otimizado. Antes: {formatar_tamanho(antes)} | Depois: {formatar_tamanho(depois)}.")
+    return redirect(url_for("painel_storage"))
+
+
 @app.route("/status-data")
 @login_required("admin")
 def status_data():
