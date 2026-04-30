@@ -2,30 +2,7 @@
 {% block title %}XMLs do Cliente{% endblock %}
 {% block page_title %}XMLs do Cliente{% endblock %}
 {% block content %}
-<div class="card">
-    <h2>{{cliente.razao}}</h2>
-    <p><b>CNPJ:</b> {{cliente.cnpj or '-'}}</p>
-    <p style="color:#64748b;">XMLs do mês selecionado. A busca/atualização é feita somente pelo administrador.</p>
-</div>
-<div class="card">
-    <form class="filters" method="get">
-        <div class="field"><label>Mês</label><select name="mes">{% for k,v in MESES %}<option value="{{k}}" {% if k==mes %}selected{% endif %}>{{v}}</option>{% endfor %}</select></div>
-        <div class="field"><label>Ano</label><select name="ano">{% for a in ANOS %}<option value="{{a}}" {% if a==ano %}selected{% endif %}>{{a}}</option>{% endfor %}</select></div>
-        <button class="btn">Filtrar</button>
-    </form>
-</div>
-<div class="card">
-    <div class="actions-bar">
-        <div><h3>XMLs disponíveis</h3><p>Baixe um XML ou todos em ZIP, separados por NFE, NFCE, CTE e OUTROS.</p></div>
-        <a class="btn btn-yellow" href="{{ url_for('baixar_todos_xml_cliente_contabilidade', id=cliente.id, mes=mes, ano=ano) }}">Baixar todos em ZIP</a>
-    </div>
-    <table>
-        <tr><th>Data</th><th>Número NF</th><th>Chave</th><th>Valor</th><th>Arquivo</th></tr>
-        {% for x in xmls %}
-        <tr><td>{{x.criado_em}}</td><td>{{x.numero_nf or '-'}}</td><td>{{x.chave or '-'}}</td><td>{% if x.valor_nf %}R$ {{x.valor_nf}}{% else %}-{% endif %}</td><td><a class="btn btn-light" href="{{ url_for('baixar_xml_cliente_contabilidade', id=cliente.id, arquivo=x.arquivo) }}">Baixar XML</a></td></tr>
-        {% endfor %}
-        {% if not xmls %}<tr><td colspan="5">Nenhum XML disponível neste mês.</td></tr>{% endif %}
-    </table>
-    <p style="margin-top:15px;"><a class="btn btn-light" href="{{ url_for('area_contabilidade', mes=mes, ano=ano) }}">Voltar</a></p>
-</div>
+<div class="card"><h2>{{cliente.razao}}</h2><p><b>CNPJ:</b> {{cliente.cnpj or '-'}}</p><p style="color:#64748b;">XMLs do mês selecionado. A busca/atualização é feita somente pelo administrador.</p></div>
+<div class="card"><form class="filters" method="get"><div class="field"><label>Mês</label><select name="mes">{% for k,v in MESES %}<option value="{{k}}" {% if k==mes %}selected{% endif %}>{{v}}</option>{% endfor %}</select></div><div class="field"><label>Ano</label><select name="ano">{% for a in ANOS %}<option value="{{a}}" {% if a==ano %}selected{% endif %}>{{a}}</option>{% endfor %}</select></div><button class="btn">Filtrar</button></form></div>
+<div class="card"><div class="actions-bar"><div><h3>XMLs disponíveis</h3><p>Baixe um XML ou todos em ZIP, separados por NFE, NFCE, CTE e OUTROS.</p></div><a class="btn btn-yellow" href="{{ url_for('baixar_todos_xml_cliente_contabilidade', id=cliente.id, mes=mes, ano=ano) }}">Baixar todos em ZIP</a></div><table><tr><th>Data</th><th>Número NF</th><th>Chave</th><th>Valor</th><th>Arquivo</th></tr>{% for x in xmls %}<tr><td>{{x.criado_em}}</td><td>{{x.numero_nf or '-'}}</td><td>{{x.chave or '-'}}</td><td>{% if x.valor_nf %}R$ {{x.valor_nf}}{% else %}-{% endif %}</td><td><a class="btn btn-light" href="{{ url_for('baixar_xml_cliente_contabilidade', id=cliente.id, arquivo=x.arquivo) }}">Baixar XML</a></td></tr>{% endfor %}{% if not xmls %}<tr><td colspan="5">Nenhum XML disponível neste mês.</td></tr>{% endif %}</table><p style="margin-top:15px;"><a class="btn btn-light" href="{{ url_for('area_contabilidade', mes=mes, ano=ano) }}">Voltar</a></p></div>
 {% endblock %}

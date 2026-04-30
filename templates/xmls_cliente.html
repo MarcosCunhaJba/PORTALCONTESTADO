@@ -2,31 +2,7 @@
 {% block title %}XMLs do Cliente{% endblock %}
 {% block page_title %}XMLs do Cliente{% endblock %}
 {% block content %}
-<div class="card">
-    <h2>{{cliente.razao}}</h2>
-    <p><b>CNPJ:</b> {{cliente.cnpj or '-'}}</p>
-    <p><b>Certificado:</b> {% if cliente.arquivo_certificado %}Cadastrado{% else %}<span class="status-pend">Não cadastrado</span>{% endif %}</p>
-</div>
-<div class="card">
-    <h3>Buscar XMLs emitidos para a empresa</h3>
-    <p style="color:#64748b;">Serão salvos apenas XMLs em que o CNPJ do cliente aparece como destinatário. Se retornar 656, aguarde 1 hora.</p>
-    <form method="post" action="{{ url_for('buscar_xmls_cliente', id=cliente.id) }}" class="grid2">
-        <div class="field"><label>Ambiente</label><select name="tp_amb"><option value="1">Produção</option><option value="2">Homologação</option></select></div>
-        <div class="field"><label>Código UF Autor</label><input name="cuf_autor" value="42"></div>
-        <div><button class="btn">Buscar XMLs agora</button> <a class="btn btn-light" href="{{ url_for('clientes') }}">Voltar</a></div>
-    </form>
-</div>
-<div class="card">
-    <div class="actions-bar">
-        <div><h3>XMLs encontrados</h3><p>Baixe individualmente ou todos em ZIP, separados por tipo fiscal.</p></div>
-        <a class="btn btn-yellow" href="{{ url_for('baixar_todos_xml_cliente', id=cliente.id, mes=request.args.get('mes',''), ano=request.args.get('ano','')) }}">Baixar todos em ZIP</a>
-    </div>
-    <table>
-        <tr><th>Data</th><th>Número NF</th><th>Chave</th><th>Valor</th><th>Arquivo</th></tr>
-        {% for x in xmls %}
-        <tr><td>{{x.criado_em}}</td><td>{{x.numero_nf or '-'}}</td><td>{{x.chave or '-'}}</td><td>{% if x.valor_nf %}R$ {{x.valor_nf}}{% else %}-{% endif %}</td><td><a class="btn btn-light" href="{{ url_for('baixar_xml_cliente', id=cliente.id, arquivo=x.arquivo) }}">Baixar XML</a></td></tr>
-        {% endfor %}
-        {% if not xmls %}<tr><td colspan="5">Nenhum XML encontrado ainda.</td></tr>{% endif %}
-    </table>
-</div>
+<div class="card"><h2>{{cliente.razao}}</h2><p><b>CNPJ:</b> {{cliente.cnpj or '-'}}</p><p><b>Certificado:</b> {% if cliente.arquivo_certificado %}Cadastrado{% else %}<span class="status-pend">Não cadastrado</span>{% endif %}</p></div>
+<div class="card"><h3>Buscar XMLs emitidos para a empresa</h3><p style="color:#64748b;">Serão salvos apenas XMLs em que o CNPJ do cliente aparece como destinatário. Se retornar 656, aguarde 1 hora.</p><form method="post" action="{{ url_for('buscar_xmls_cliente', id=cliente.id) }}" class="grid2"><div class="field"><label>Ambiente</label><select name="tp_amb"><option value="1">Produção</option><option value="2">Homologação</option></select></div><div class="field"><label>Código UF Autor</label><input name="cuf_autor" value="42"></div><div><button class="btn">Buscar XMLs agora</button> <a class="btn btn-light" href="{{ url_for('clientes') }}">Voltar</a></div></form></div>
+<div class="card"><div class="actions-bar"><div><h3>XMLs encontrados</h3><p>Baixe individualmente ou todos em ZIP, separados por tipo fiscal.</p></div><a class="btn btn-yellow" href="{{ url_for('baixar_todos_xml_cliente', id=cliente.id) }}">Baixar todos em ZIP</a></div><table><tr><th>Data</th><th>Número NF</th><th>Chave</th><th>Valor</th><th>Arquivo</th></tr>{% for x in xmls %}<tr><td>{{x.criado_em}}</td><td>{{x.numero_nf or '-'}}</td><td>{{x.chave or '-'}}</td><td>{% if x.valor_nf %}R$ {{x.valor_nf}}{% else %}-{% endif %}</td><td><a class="btn btn-light" href="{{ url_for('baixar_xml_cliente', id=cliente.id, arquivo=x.arquivo) }}">Baixar XML</a></td></tr>{% endfor %}{% if not xmls %}<tr><td colspan="5">Nenhum XML encontrado ainda.</td></tr>{% endif %}</table></div>
 {% endblock %}
