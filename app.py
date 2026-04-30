@@ -912,14 +912,26 @@ def consultar_dfe_sefaz(cliente, cuf_autor="42", tp_amb="1"):
                 f.write(xml_conteudo)
 
             chave = ""
+            dest_cnpj = ""
             try:
                 xml_doc = ET.fromstring(xml_conteudo)
                 for el in xml_doc.iter():
                     if local(el.tag) == "chNFe" and el.text:
                         chave = el.text
                         break
+                for dest in xml_doc.iter():
+                    if local(dest.tag) == "dest":
+                        for filho in dest:
+                            if local(filho.tag) == "CNPJ" and filho.text:
+                                dest_cnpj = somente_digitos(filho.text)
+                                break
+                        break
             except Exception:
                 pass
+
+            # Salva apenas XMLs emitidos PARA a empresa (destinatário = CNPJ do cliente)
+            if dest_cnpj and dest_cnpj != cnpj:
+                continue
 
             con.execute(
                 "INSERT INTO xmls_dfe (cliente_id, nsu, schema_xml, chave, arquivo, criado_em) VALUES (?, ?, ?, ?, ?, ?)",
@@ -990,6 +1002,32 @@ def buscar_xmls_cliente(id):
 def baixar_xml_cliente(id, arquivo):
     pasta_cliente = os.path.join(XML_DIR, str(id))
     return send_from_directory(pasta_cliente, arquivo, as_attachment=True)
+
+
+
+@app.route("/contabilidade/xmls/<int:id>")
+@login_required("contabilidade")
+def xmls_cliente_contabilidade(id):
+    con = db()
+    cliente = con.execute("SELECT * FROM clientes WHERE id=? AND contabilidade_id=? AND COALESCE(ativo,1)=1", (id, session.get("contabilidade_id"))).fetchone()
+    if not cliente:
+        con.close()
+        flash("Cliente não encontrado ou sem permissão.")
+        return redirect(url_for("area_contabilidade"))
+    xmls = con.execute("SELECT * FROM xmls_dfe WHERE cliente_id=? ORDER BY id DESC", (id,)).fetchall()
+    con.close()
+    return render_template("xmls_cliente_contabilidade.html", cliente=cliente, xmls=xmls)
+
+@app.route("/contabilidade/xmls/<int:id>/baixar/<arquivo>")
+@login_required("contabilidade")
+def baixar_xml_cliente_contabilidade(id, arquivo):
+    con = db()
+    cliente = con.execute("SELECT id FROM clientes WHERE id=? AND contabilidade_id=? AND COALESCE(ativo,1)=1", (id, session.get("contabilidade_id"))).fetchone()
+    con.close()
+    if not cliente:
+        flash("Sem permissão para baixar este XML.")
+        return redirect(url_for("area_contabilidade"))
+    return send_from_directory(os.path.join(XML_DIR, str(id)), arquivo, as_attachment=True)
 
 
 @app.route("/status-data")

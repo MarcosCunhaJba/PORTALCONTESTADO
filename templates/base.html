@@ -10,9 +10,8 @@
 <body>
 <div class="app">
     <aside class="sidebar">
-        <div class="brand">
-            <div class="logo-text">CH<br><span>Contestado</span></div>
-        </div>
+        <div class="brand"><img src="{{ url_for('static', filename='logo_ch_contestado.svg') }}" alt="CH Contestado"></div>
+
         {% if user %}
         <nav class="nav">
             {% if user.tipo == 'admin' %}
