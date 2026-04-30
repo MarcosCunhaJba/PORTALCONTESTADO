@@ -127,8 +127,14 @@ def init_db():
         schema_xml TEXT,
         chave TEXT,
         arquivo TEXT,
-        criado_em TEXT
+        criado_em TEXT,
+        numero_nf TEXT,
+        valor_nf TEXT,
+        mes_ref TEXT,
+        ano_ref INTEGER,
+        tipo_doc TEXT
     );
+
     CREATE TABLE IF NOT EXISTS dfe_status (
         cliente_id INTEGER PRIMARY KEY,
         ult_nsu TEXT,
@@ -195,6 +201,17 @@ def init_db():
     ensure_column(cur, "xmls_dfe", "chave", "TEXT")
     ensure_column(cur, "xmls_dfe", "arquivo", "TEXT")
     ensure_column(cur, "xmls_dfe", "criado_em", "TEXT")
+    ensure_column(cur, "xmls_dfe", "numero_nf", "TEXT")
+    ensure_column(cur, "xmls_dfe", "valor_nf", "TEXT")
+    ensure_column(cur, "xmls_dfe", "mes_ref", "TEXT")
+    ensure_column(cur, "xmls_dfe", "ano_ref", "INTEGER")
+    ensure_column(cur, "xmls_dfe", "tipo_doc", "TEXT")
+    ensure_column(cur, "dfe_status", "cliente_id", "INTEGER")
+    ensure_column(cur, "dfe_status", "ult_nsu", "TEXT")
+    ensure_column(cur, "dfe_status", "max_nsu", "TEXT")
+    ensure_column(cur, "dfe_status", "cstat", "TEXT")
+    ensure_column(cur, "dfe_status", "xmotivo", "TEXT")
+    ensure_column(cur, "dfe_status", "atualizado_em", "TEXT")
 
     cur.execute("CREATE INDEX IF NOT EXISTS idx_clientes_contabilidade ON clientes(contabilidade_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_clientes_cnpj ON clientes(cnpj)")
@@ -398,6 +415,54 @@ def contabilidades():
     lista = con.execute("SELECT * FROM contabilidades WHERE COALESCE(ativo,1)=1 ORDER BY nome").fetchall()
     con.close()
     return render_template("contabilidades.html", contabilidades=lista)
+
+
+@app.route("/contabilidades/editar/<int:id>", methods=["GET", "POST"])
+@login_required("admin")
+def editar_contabilidade(id):
+    con = db()
+    cont = con.execute("SELECT * FROM contabilidades WHERE id=?", (id,)).fetchone()
+
+    if not cont:
+        con.close()
+        flash("Contabilidade não encontrada.")
+        return redirect(url_for("contabilidades"))
+
+    if request.method == "POST":
+        nome = request.form.get("nome", "").strip()
+        cnpj = request.form.get("cnpj", "").strip()
+        email = request.form.get("email", "").strip().lower()
+        telefone = request.form.get("telefone", "").strip()
+        nova_senha = request.form.get("senha", "").strip()
+
+        if not nome or not email:
+            flash("Informe nome e e-mail.")
+        else:
+            con.execute("UPDATE contabilidades SET nome=?, cnpj=?, email=?, telefone=? WHERE id=?",
+                        (nome, cnpj, email, telefone, id))
+
+            user = con.execute("SELECT * FROM users WHERE contabilidade_id=?", (id,)).fetchone()
+            if user:
+                if nova_senha:
+                    con.execute("UPDATE users SET nome=?, email=?, senha_hash=? WHERE id=?",
+                                (nome, email, generate_password_hash(nova_senha), user["id"]))
+                else:
+                    con.execute("UPDATE users SET nome=?, email=? WHERE id=?",
+                                (nome, email, user["id"]))
+            else:
+                senha = nova_senha or "123456"
+                con.execute("""
+                    INSERT INTO users (nome, email, senha_hash, tipo, contabilidade_id, criado_em)
+                    VALUES (?, ?, ?, 'contabilidade', ?, ?)
+                """, (nome, email, generate_password_hash(senha), id, datetime.now().isoformat()))
+
+            con.commit()
+            con.close()
+            flash("Contabilidade atualizada.")
+            return redirect(url_for("contabilidades"))
+
+    con.close()
+    return render_template("editar_contabilidade.html", cont=cont)
 
 @app.route("/contabilidades/excluir/<int:id>")
 @login_required("admin")
@@ -703,7 +768,24 @@ def gerar_zip_contabilidade(contabilidade_id, mes, ano):
             origem = os.path.join(DOC_DIR, d["arquivo"])
             if os.path.exists(origem):
                 pasta_cliente = secure_filename(d["razao"]) or f"cliente_{d['cliente_id']}"
-                z.write(origem, f"{pasta_cliente}/{d['nome_original']}")
+                z.write(origem, f"DOCUMENTOS/{pasta_cliente}/{d['nome_original']}")
+
+        # Inclui XMLs do mês selecionado, separados por tipo fiscal: NFE, NFCE, CTE, OUTROS
+        filtro_sql = filtro_xml_mes_sql(mes, ano)
+        xmls = con.execute(f"""
+            SELECT x.*, c.razao
+            FROM xmls_dfe x
+            JOIN clientes c ON c.id=x.cliente_id
+            WHERE c.contabilidade_id=? AND {filtro_sql}
+            ORDER BY c.razao, x.tipo_doc, x.numero_nf
+        """, (contabilidade_id, mes, ano, mes, str(ano), f"%/{mes}/{ano}%")).fetchall()
+
+        for x in xmls:
+            origem_xml = os.path.join(XML_DIR, str(x["cliente_id"]), x["arquivo"])
+            if os.path.exists(origem_xml):
+                pasta_cliente_xml = secure_filename(x["razao"]) or f"cliente_{x['cliente_id']}"
+                tipo = x["tipo_doc"] or "OUTROS"
+                z.write(origem_xml, f"XMLS/{pasta_cliente_xml}/{tipo}/{x['arquivo']}")
     con.execute("""
         INSERT INTO envios (contabilidade_id, mes, ano, arquivo_zip, token, email_destino, enviado_email, criado_em)
         VALUES (?, ?, ?, ?, ?, ?, 0, ?)
@@ -798,6 +880,95 @@ def salvar_certificado_pfx_temporario(caminho_pfx, senha):
     return cert_temp.name, key_temp.name
 
 
+
+def extrair_dados_nfe(xml_conteudo, cnpj_cliente):
+    def local(tag):
+        return tag.split("}", 1)[-1] if "}" in tag else tag
+
+    chave = ""
+    numero = ""
+    valor = ""
+    dest_cnpj = ""
+    mes_ref = ""
+    ano_ref = None
+    tipo_doc = "OUTROS"
+
+    try:
+        xml_doc = ET.fromstring(xml_conteudo)
+
+        for el in xml_doc.iter():
+            nome = local(el.tag)
+            if nome == "chNFe" and el.text and not chave:
+                chave = el.text.strip()
+            elif nome == "nNF" and el.text and not numero:
+                numero = el.text.strip().lstrip("0") or "0"
+            elif nome == "vNF" and el.text and not valor:
+                valor = el.text.strip()
+
+        for dest in xml_doc.iter():
+            if local(dest.tag) == "dest":
+                for filho in dest:
+                    if local(filho.tag) == "CNPJ" and filho.text:
+                        dest_cnpj = somente_digitos(filho.text)
+                        break
+                break
+
+        if chave and len(chave) >= 34:
+            # Chave: cUF(2)+AAMM(4)+CNPJ(14)+mod(2)+serie(3)+nNF(9)...
+            aa = chave[2:4]
+            mm = chave[4:6]
+            modelo = chave[20:22]
+            mes_ref = mm
+            ano_ref = int("20" + aa) if aa.isdigit() else None
+            if not numero:
+                numero = chave[25:34].lstrip("0") or "0"
+            if modelo == "55":
+                tipo_doc = "NFE"
+            elif modelo == "65":
+                tipo_doc = "NFCE"
+            elif modelo == "57":
+                tipo_doc = "CTE"
+            else:
+                tipo_doc = "OUTROS"
+    except Exception:
+        pass
+
+    return chave, numero, valor, dest_cnpj, mes_ref, ano_ref, tipo_doc
+
+
+def atualizar_status_dfe(cliente_id, ult_nsu, max_nsu, cstat, xmotivo):
+    con = db()
+    con.execute("""
+        INSERT INTO dfe_status (cliente_id, ult_nsu, max_nsu, cstat, xmotivo, atualizado_em)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(cliente_id) DO UPDATE SET
+            ult_nsu=excluded.ult_nsu,
+            max_nsu=excluded.max_nsu,
+            cstat=excluded.cstat,
+            xmotivo=excluded.xmotivo,
+            atualizado_em=excluded.atualizado_em
+    """, (cliente_id, ult_nsu, max_nsu, cstat, xmotivo, datetime.now().strftime("%d/%m/%Y %H:%M")))
+    con.commit()
+    con.close()
+
+
+def filtro_xml_mes_sql(mes, ano):
+    return """(
+        (mes_ref=? AND ano_ref=?)
+        OR (
+            (mes_ref IS NULL OR mes_ref='')
+            AND chave IS NOT NULL
+            AND length(chave) >= 6
+            AND substr(chave, 5, 2)=?
+            AND ('20' || substr(chave, 3, 2))=?
+        )
+        OR (
+            (mes_ref IS NULL OR mes_ref='')
+            AND (chave IS NULL OR chave='')
+            AND criado_em LIKE ?
+        )
+    )"""
+
 def consultar_dfe_sefaz(cliente, cuf_autor="42", tp_amb="1"):
     cnpj = somente_digitos(cliente["cnpj"])
     if len(cnpj) != 14:
@@ -814,11 +985,7 @@ def consultar_dfe_sefaz(cliente, cuf_autor="42", tp_amb="1"):
         return False, "Arquivo do certificado não encontrado no servidor.", 0
 
     con = db()
-    status = con.execute(
-        "SELECT ult_nsu FROM dfe_status WHERE cliente_id=?",
-        (cliente["id"],)
-    ).fetchone()
-
+    status = con.execute("SELECT ult_nsu FROM dfe_status WHERE cliente_id=?", (cliente["id"],)).fetchone()
     if status and status["ult_nsu"]:
         ult_nsu = str(status["ult_nsu"]).zfill(15)
     else:
@@ -827,7 +994,6 @@ def consultar_dfe_sefaz(cliente, cuf_autor="42", tp_amb="1"):
             (cliente["id"],)
         ).fetchone()
         ult_nsu = (ultimo["nsu"] if ultimo and ultimo["nsu"] else "0").zfill(15)
-
     con.close()
     cert_pem = key_pem = None
 
@@ -894,7 +1060,6 @@ def consultar_dfe_sefaz(cliente, cuf_autor="42", tp_amb="1"):
         ret_ult_nsu = dados.get("ultNSU", ult_nsu) or ult_nsu
         ret_max_nsu = dados.get("maxNSU", "") or ""
 
-        # Sempre grava o ultNSU retornado pela SEFAZ, mesmo quando não houver XML salvo.
         atualizar_status_dfe(cliente["id"], ret_ult_nsu, ret_max_nsu, cstat, xmotivo)
 
         if cstat == "656":
@@ -935,19 +1100,18 @@ def consultar_dfe_sefaz(cliente, cuf_autor="42", tp_amb="1"):
             with open(caminho_xml, "wb") as f:
                 f.write(xml_conteudo)
 
-            chave, numero_nf, valor_nf, dest_cnpj = extrair_dados_nfe(xml_conteudo, cnpj)
+            chave, numero_nf, valor_nf, dest_cnpj, mes_ref, ano_ref, tipo_doc = extrair_dados_nfe(xml_conteudo, cnpj)
 
             # Salva apenas XMLs emitidos PARA a empresa (destinatário = CNPJ do cliente).
-            # Se o XML resumido não trouxer destinatário, mantém por ser retorno de interesse do CNPJ consultado.
+            # Quando o XML resumido não traz destinatário, mantém por ser retorno de interesse do CNPJ consultado.
             if dest_cnpj and dest_cnpj != cnpj:
                 continue
 
             con.execute(
-                "INSERT INTO xmls_dfe (cliente_id, nsu, schema_xml, chave, arquivo, criado_em, numero_nf, valor_nf) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (cliente["id"], nsu, schema_xml, chave, nome_arquivo, datetime.now().strftime("%d/%m/%Y %H:%M"), numero_nf, valor_nf)
+                "INSERT INTO xmls_dfe (cliente_id, nsu, schema_xml, chave, arquivo, criado_em, numero_nf, valor_nf, mes_ref, ano_ref, tipo_doc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (cliente["id"], nsu, schema_xml, chave, nome_arquivo, datetime.now().strftime("%d/%m/%Y %H:%M"), numero_nf, valor_nf, mes_ref, ano_ref, tipo_doc)
             )
             salvos += 1
-
 
         con.commit()
         con.close()
@@ -1038,6 +1202,132 @@ def baixar_xml_cliente_contabilidade(id, arquivo):
         flash("Sem permissão para baixar este XML.")
         return redirect(url_for("area_contabilidade"))
     return send_from_directory(os.path.join(XML_DIR, str(id)), arquivo, as_attachment=True)
+
+
+
+@app.route("/clientes/xmls/<int:id>/baixar-todos")
+@login_required("admin")
+def baixar_todos_xml_cliente(id):
+    mes = request.args.get("mes", datetime.now().strftime("%m"))
+    ano = int(request.args.get("ano", datetime.now().year))
+
+    con = db()
+    cliente = con.execute("SELECT * FROM clientes WHERE id=?", (id,)).fetchone()
+
+    filtro_sql = filtro_xml_mes_sql(mes, ano)
+    xmls = con.execute(f"SELECT * FROM xmls_dfe WHERE cliente_id=? AND {filtro_sql} ORDER BY tipo_doc, numero_nf, id DESC",
+                       (id, mes, ano, mes, str(ano), f"%/{mes}/{ano}%")).fetchall()
+    con.close()
+
+    if not cliente:
+        flash("Cliente não encontrado.")
+        return redirect(url_for("clientes"))
+
+    if not xmls:
+        flash("Nenhum XML disponível para zipar neste mês.")
+        return redirect(url_for("xmls_cliente", id=id, mes=mes, ano=ano))
+
+    pasta_cliente = os.path.join(XML_DIR, str(id))
+    pasta_zip = os.path.join(ZIP_DIR, "xmls")
+    os.makedirs(pasta_zip, exist_ok=True)
+
+    nome_base = secure_filename(cliente["razao"] or f"cliente_{id}") or f"cliente_{id}"
+    nome_zip = f"xmls_{nome_base}_{ano}_{mes}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+    caminho_zip = os.path.join(pasta_zip, nome_zip)
+
+    with zipfile.ZipFile(caminho_zip, "w", zipfile.ZIP_DEFLATED) as z:
+        for x in xmls:
+            caminho_xml = os.path.join(pasta_cliente, x["arquivo"])
+            if os.path.exists(caminho_xml):
+                tipo = x["tipo_doc"] or "OUTROS"
+                z.write(caminho_xml, os.path.join(nome_base, tipo, x["arquivo"]))
+
+    return send_from_directory(pasta_zip, nome_zip, as_attachment=True)
+
+
+@app.route("/contabilidade/xmls/<int:id>")
+@login_required("contabilidade")
+def xmls_cliente_contabilidade(id):
+    mes = request.args.get("mes", datetime.now().strftime("%m"))
+    ano = int(request.args.get("ano", datetime.now().year))
+
+    con = db()
+    cliente = con.execute(
+        "SELECT * FROM clientes WHERE id=? AND contabilidade_id=? AND COALESCE(ativo,1)=1",
+        (id, session.get("contabilidade_id"))
+    ).fetchone()
+
+    if not cliente:
+        con.close()
+        flash("Cliente não encontrado ou sem permissão.")
+        return redirect(url_for("area_contabilidade"))
+
+    filtro_sql = filtro_xml_mes_sql(mes, ano)
+    xmls = con.execute(f"SELECT * FROM xmls_dfe WHERE cliente_id=? AND {filtro_sql} ORDER BY tipo_doc, numero_nf, id DESC",
+                       (id, mes, ano, mes, str(ano), f"%/{mes}/{ano}%")).fetchall()
+    con.close()
+
+    return render_template("xmls_cliente_contabilidade.html", cliente=cliente, xmls=xmls, mes=mes, ano=ano)
+
+
+@app.route("/contabilidade/xmls/<int:id>/baixar/<arquivo>")
+@login_required("contabilidade")
+def baixar_xml_cliente_contabilidade(id, arquivo):
+    con = db()
+    cliente = con.execute(
+        "SELECT id FROM clientes WHERE id=? AND contabilidade_id=? AND COALESCE(ativo,1)=1",
+        (id, session.get("contabilidade_id"))
+    ).fetchone()
+    con.close()
+
+    if not cliente:
+        flash("Sem permissão para baixar este XML.")
+        return redirect(url_for("area_contabilidade"))
+
+    return send_from_directory(os.path.join(XML_DIR, str(id)), arquivo, as_attachment=True)
+
+
+@app.route("/contabilidade/xmls/<int:id>/baixar-todos")
+@login_required("contabilidade")
+def baixar_todos_xml_cliente_contabilidade(id):
+    mes = request.args.get("mes", datetime.now().strftime("%m"))
+    ano = int(request.args.get("ano", datetime.now().year))
+
+    con = db()
+    cliente = con.execute(
+        "SELECT * FROM clientes WHERE id=? AND contabilidade_id=? AND COALESCE(ativo,1)=1",
+        (id, session.get("contabilidade_id"))
+    ).fetchone()
+
+    filtro_sql = filtro_xml_mes_sql(mes, ano)
+    xmls = con.execute(f"SELECT * FROM xmls_dfe WHERE cliente_id=? AND {filtro_sql} ORDER BY tipo_doc, numero_nf, id DESC",
+                       (id, mes, ano, mes, str(ano), f"%/{mes}/{ano}%")).fetchall()
+    con.close()
+
+    if not cliente:
+        flash("Cliente não encontrado ou sem permissão.")
+        return redirect(url_for("area_contabilidade"))
+
+    if not xmls:
+        flash("Nenhum XML disponível para zipar neste mês.")
+        return redirect(url_for("xmls_cliente_contabilidade", id=id, mes=mes, ano=ano))
+
+    pasta_cliente = os.path.join(XML_DIR, str(id))
+    pasta_zip = os.path.join(ZIP_DIR, "xmls")
+    os.makedirs(pasta_zip, exist_ok=True)
+
+    nome_base = secure_filename(cliente["razao"] or f"cliente_{id}") or f"cliente_{id}"
+    nome_zip = f"xmls_{nome_base}_{ano}_{mes}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+    caminho_zip = os.path.join(pasta_zip, nome_zip)
+
+    with zipfile.ZipFile(caminho_zip, "w", zipfile.ZIP_DEFLATED) as z:
+        for x in xmls:
+            caminho_xml = os.path.join(pasta_cliente, x["arquivo"])
+            if os.path.exists(caminho_xml):
+                tipo = x["tipo_doc"] or "OUTROS"
+                z.write(caminho_xml, os.path.join(nome_base, tipo, x["arquivo"]))
+
+    return send_from_directory(pasta_zip, nome_zip, as_attachment=True)
 
 
 @app.route("/status-data")

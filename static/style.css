@@ -4,12 +4,10 @@
 
 .brand img{max-width:205px;width:100%;height:auto;background:#fff;border-radius:16px;padding:8px;display:block;}
 
-/* BRANDING CH CONTESTADO OFICIAL */
-:root{--azul:#0057B8;--azul-escuro:#0B2F5B;--azul-claro:#00A3D7;--amarelo:#F3C226;--bg:#F4F7FB;}
-body{background:var(--bg)!important;}
-.sidebar{background:linear-gradient(180deg,#0B2F5B 0%,#06305F 55%,#041B35 100%)!important;}
-.brand img{max-width:215px;width:100%;height:auto;background:#fff;border-radius:18px;padding:10px;display:block;box-shadow:0 10px 24px rgba(0,0,0,.16);}
-.btn{background:linear-gradient(135deg,#0057B8,#003D82)!important;border-radius:12px;}
-.btn-yellow{background:#F3C226!important;color:#0B2F5B!important;}
-.btn-light{background:#EAF3FF!important;color:#0B2F5B!important;}
-.topbar h1{color:#0B2F5B!important;}
+/* CH CONTESTADO BRAND FIX */
+:root{--azul:#0057B8;--azul-escuro:#0B2F5B;--azul-claro:#00A3D7;--amarelo:#F3C226}
+.sidebar{background:linear-gradient(180deg,#0B2F5B,#06305F 58%,#041B35)!important}
+.brand img{max-width:215px;width:100%;height:auto;background:#fff;border-radius:18px;padding:10px;display:block;box-shadow:0 10px 24px rgba(0,0,0,.16)}
+.btn{background:linear-gradient(135deg,#0057B8,#003D82)!important;border-radius:12px}
+.btn-yellow{background:#F3C226!important;color:#0B2F5B!important}
+.btn-light{background:#EAF3FF!important;color:#0B2F5B!important}
