@@ -129,6 +129,14 @@ def init_db():
         arquivo TEXT,
         criado_em TEXT
     );
+    CREATE TABLE IF NOT EXISTS dfe_status (
+        cliente_id INTEGER PRIMARY KEY,
+        ult_nsu TEXT,
+        max_nsu TEXT,
+        cstat TEXT,
+        xmotivo TEXT,
+        atualizado_em TEXT
+    );
     """)
     # Autorreparo completo para bancos antigos que já estavam no Railway
     # Isso evita erro 500 quando uma tabela antiga não tem alguma coluna nova.
@@ -806,13 +814,21 @@ def consultar_dfe_sefaz(cliente, cuf_autor="42", tp_amb="1"):
         return False, "Arquivo do certificado não encontrado no servidor.", 0
 
     con = db()
-    ultimo = con.execute(
-        "SELECT nsu FROM xmls_dfe WHERE cliente_id=? ORDER BY CAST(nsu AS INTEGER) DESC LIMIT 1",
+    status = con.execute(
+        "SELECT ult_nsu FROM dfe_status WHERE cliente_id=?",
         (cliente["id"],)
     ).fetchone()
-    con.close()
 
-    ult_nsu = (ultimo["nsu"] if ultimo and ultimo["nsu"] else "0").zfill(15)
+    if status and status["ult_nsu"]:
+        ult_nsu = str(status["ult_nsu"]).zfill(15)
+    else:
+        ultimo = con.execute(
+            "SELECT nsu FROM xmls_dfe WHERE cliente_id=? ORDER BY CAST(nsu AS INTEGER) DESC LIMIT 1",
+            (cliente["id"],)
+        ).fetchone()
+        ult_nsu = (ultimo["nsu"] if ultimo and ultimo["nsu"] else "0").zfill(15)
+
+    con.close()
     cert_pem = key_pem = None
 
     try:
@@ -875,6 +891,14 @@ def consultar_dfe_sefaz(cliente, cuf_autor="42", tp_amb="1"):
 
         cstat = dados.get("cStat", "")
         xmotivo = dados.get("xMotivo", "")
+        ret_ult_nsu = dados.get("ultNSU", ult_nsu) or ult_nsu
+        ret_max_nsu = dados.get("maxNSU", "") or ""
+
+        # Sempre grava o ultNSU retornado pela SEFAZ, mesmo quando não houver XML salvo.
+        atualizar_status_dfe(cliente["id"], ret_ult_nsu, ret_max_nsu, cstat, xmotivo)
+
+        if cstat == "656":
+            return False, "SEFAZ: 656 - Consumo indevido. Aguarde 1 hora para nova consulta deste cliente. O sistema manteve o último NSU para a próxima tentativa.", 0
 
         if cstat not in ("137", "138"):
             return False, f"SEFAZ: {cstat} - {xmotivo}", 0
@@ -911,33 +935,19 @@ def consultar_dfe_sefaz(cliente, cuf_autor="42", tp_amb="1"):
             with open(caminho_xml, "wb") as f:
                 f.write(xml_conteudo)
 
-            chave = ""
-            dest_cnpj = ""
-            try:
-                xml_doc = ET.fromstring(xml_conteudo)
-                for el in xml_doc.iter():
-                    if local(el.tag) == "chNFe" and el.text:
-                        chave = el.text
-                        break
-                for dest in xml_doc.iter():
-                    if local(dest.tag) == "dest":
-                        for filho in dest:
-                            if local(filho.tag) == "CNPJ" and filho.text:
-                                dest_cnpj = somente_digitos(filho.text)
-                                break
-                        break
-            except Exception:
-                pass
+            chave, numero_nf, valor_nf, dest_cnpj = extrair_dados_nfe(xml_conteudo, cnpj)
 
-            # Salva apenas XMLs emitidos PARA a empresa (destinatário = CNPJ do cliente)
+            # Salva apenas XMLs emitidos PARA a empresa (destinatário = CNPJ do cliente).
+            # Se o XML resumido não trouxer destinatário, mantém por ser retorno de interesse do CNPJ consultado.
             if dest_cnpj and dest_cnpj != cnpj:
                 continue
 
             con.execute(
-                "INSERT INTO xmls_dfe (cliente_id, nsu, schema_xml, chave, arquivo, criado_em) VALUES (?, ?, ?, ?, ?, ?)",
-                (cliente["id"], nsu, schema_xml, chave, nome_arquivo, datetime.now().strftime("%d/%m/%Y %H:%M"))
+                "INSERT INTO xmls_dfe (cliente_id, nsu, schema_xml, chave, arquivo, criado_em, numero_nf, valor_nf) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (cliente["id"], nsu, schema_xml, chave, nome_arquivo, datetime.now().strftime("%d/%m/%Y %H:%M"), numero_nf, valor_nf)
             )
             salvos += 1
+
 
         con.commit()
         con.close()

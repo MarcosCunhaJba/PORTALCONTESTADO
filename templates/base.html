@@ -10,9 +10,7 @@
 <body>
 <div class="app">
     <aside class="sidebar">
-        <div class="brand"><img src="{{ url_for('static', filename='logo_ch_contestado.svg') }}" alt="CH Contestado"></div>
-
-        {% if user %}
+        <div class="brand"><img src="{{ url_for('static', filename='logo_ch_contestado.svg') }}" alt="CH Contestado"></div>\n\n        {% if user %}
         <nav class="nav">
             {% if user.tipo == 'admin' %}
                 <a href="{{ url_for('dashboard_admin') }}">Dashboard</a>
