@@ -2,7 +2,78 @@
 {% block title %}XMLs do Cliente{% endblock %}
 {% block page_title %}XMLs do Cliente{% endblock %}
 {% block content %}
-<div class="card"><h2>{{cliente.razao}}</h2><p><b>CNPJ:</b> {{cliente.cnpj or '-'}}</p><p style="color:#64748b;">XMLs do mês selecionado. A busca/atualização é feita somente pelo administrador.</p></div>
-<div class="card"><form class="filters" method="get"><div class="field"><label>Mês</label><select name="mes">{% for k,v in MESES %}<option value="{{k}}" {% if k==mes %}selected{% endif %}>{{v}}</option>{% endfor %}</select></div><div class="field"><label>Ano</label><select name="ano">{% for a in ANOS %}<option value="{{a}}" {% if a==ano %}selected{% endif %}>{{a}}</option>{% endfor %}</select></div><button class="btn">Filtrar</button></form></div>
-<div class="card"><div class="actions-bar"><div><h3>XMLs disponíveis</h3><p>Baixe um XML ou todos em ZIP, separados por NFE, NFCE, CTE e OUTROS.</p></div><a class="btn btn-yellow" href="{{ url_for('baixar_todos_xml_cliente_contabilidade', id=cliente.id, mes=mes, ano=ano) }}">Baixar todos em ZIP</a></div><table><tr><th>Data</th><th>Número NF</th><th>Chave</th><th>Valor</th><th>Arquivo</th></tr>{% for x in xmls %}<tr><td>{{x.criado_em}}</td><td>{{x.numero_nf or '-'}}</td><td>{{x.chave or '-'}}</td><td>{% if x.valor_nf %}R$ {{x.valor_nf}}{% else %}-{% endif %}</td><td><a class="btn btn-light" href="{{ url_for('baixar_xml_cliente_contabilidade', id=cliente.id, arquivo=x.arquivo) }}">Baixar XML</a></td></tr>{% endfor %}{% if not xmls %}<tr><td colspan="5">Nenhum XML disponível neste mês.</td></tr>{% endif %}</table><p style="margin-top:15px;"><a class="btn btn-light" href="{{ url_for('area_contabilidade', mes=mes, ano=ano) }}">Voltar</a></p></div>
+<div class="card">
+    <h2>{{cliente.razao}}</h2>
+    <p><b>CNPJ:</b> {{cliente.cnpj or '-'}}</p>
+    <p style="color:#64748b;">XMLs do mês selecionado. A busca/atualização é feita somente pelo administrador.</p>
+</div>
+
+<div class="card">
+    <form class="filters" method="get">
+        <div class="field"><label>Mês</label><select name="mes">{% for k,v in MESES %}<option value="{{k}}" {% if k==mes %}selected{% endif %}>{{v}}</option>{% endfor %}</select></div>
+        <div class="field"><label>Ano</label><select name="ano">{% for a in ANOS %}<option value="{{a}}" {% if a==ano %}selected{% endif %}>{{a}}</option>{% endfor %}</select></div>
+        <button class="btn">Filtrar</button>
+    </form>
+</div>
+
+<div class="card">
+    <div class="actions-bar">
+        <div>
+            <h3>XMLs disponíveis - {{nome_mes(mes)}}/{{ano}}</h3>
+            <p>Baixe um XML ou todos em ZIP, separados por NFE, NFCE, CTE e OUTROS.</p>
+        </div>
+        <a class="btn btn-yellow" href="{{ url_for('baixar_todos_xml_cliente_contabilidade', id=cliente.id, mes=mes, ano=ano) }}">Baixar todos em ZIP</a>
+    </div>
+
+    <style>
+      .tabs-xml{display:flex;gap:10px;margin:15px 0;flex-wrap:wrap}
+      .tab-btn{border:0;border-radius:12px;padding:11px 16px;font-weight:900;cursor:pointer;background:#EAF3FF;color:#0B2F5B}
+      .tab-btn.active{background:#0057B8;color:white}
+      .tab-pane{display:none}
+      .tab-pane.active{display:block}
+    </style>
+
+    <div class="tabs-xml">
+      <button type="button" class="tab-btn active" onclick="abrirTabXml('emitidas')">NFs emitidas pela empresa ({{emitidas|length}})</button>
+      <button type="button" class="tab-btn" onclick="abrirTabXml('recebidas')">NFs recebidas pela empresa ({{recebidas|length}})</button>
+    </div>
+
+    <div id="tab-emitidas" class="tab-pane active"><table>
+<tr><th>Data</th><th>Número NF</th><th>Chave</th><th>Valor</th><th>Arquivo</th></tr>
+{% for x in emitidas %}
+<tr>
+<td>{{x.criado_em}}</td>
+<td>{{x.numero_nf or '-'}}</td>
+<td>{{x.chave or '-'}}</td>
+<td>{% if x.valor_nf %}R$ {{x.valor_nf}}{% else %}-{% endif %}</td>
+<td><a class="btn btn-light" href="{{ url_for('baixar_xml_cliente_contabilidade', id=cliente.id, arquivo=x.arquivo) }}">Baixar XML</a></td>
+</tr>
+{% endfor %}
+{% if not emitidas %}<tr><td colspan="5">Nenhum XML encontrado neste mês.</td></tr>{% endif %}
+</table></div>
+    <div id="tab-recebidas" class="tab-pane"><table>
+<tr><th>Data</th><th>Número NF</th><th>Chave</th><th>Valor</th><th>Arquivo</th></tr>
+{% for x in recebidas %}
+<tr>
+<td>{{x.criado_em}}</td>
+<td>{{x.numero_nf or '-'}}</td>
+<td>{{x.chave or '-'}}</td>
+<td>{% if x.valor_nf %}R$ {{x.valor_nf}}{% else %}-{% endif %}</td>
+<td><a class="btn btn-light" href="{{ url_for('baixar_xml_cliente_contabilidade', id=cliente.id, arquivo=x.arquivo) }}">Baixar XML</a></td>
+</tr>
+{% endfor %}
+{% if not recebidas %}<tr><td colspan="5">Nenhum XML encontrado neste mês.</td></tr>{% endif %}
+</table></div>
+
+    <script>
+      function abrirTabXml(nome){
+        document.querySelectorAll('.tab-pane').forEach(e=>e.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(e=>e.classList.remove('active'));
+        document.getElementById('tab-'+nome).classList.add('active');
+        event.target.classList.add('active');
+      }
+    </script>
+
+    <p style="margin-top:15px;"><a class="btn btn-light" href="{{ url_for('area_contabilidade', mes=mes, ano=ano) }}">Voltar</a></p>
+</div>
 {% endblock %}

@@ -132,7 +132,9 @@ def init_db():
         valor_nf TEXT,
         mes_ref TEXT,
         ano_ref INTEGER,
-        tipo_doc TEXT
+        tipo_doc TEXT,
+        emit_cnpj TEXT,
+        dest_cnpj TEXT
     );
 
     CREATE TABLE IF NOT EXISTS dfe_status (
@@ -206,6 +208,8 @@ def init_db():
     ensure_column(cur, "xmls_dfe", "mes_ref", "TEXT")
     ensure_column(cur, "xmls_dfe", "ano_ref", "INTEGER")
     ensure_column(cur, "xmls_dfe", "tipo_doc", "TEXT")
+    ensure_column(cur, "xmls_dfe", "emit_cnpj", "TEXT")
+    ensure_column(cur, "xmls_dfe", "dest_cnpj", "TEXT")
     ensure_column(cur, "dfe_status", "cliente_id", "INTEGER")
     ensure_column(cur, "dfe_status", "ult_nsu", "TEXT")
     ensure_column(cur, "dfe_status", "max_nsu", "TEXT")
@@ -890,6 +894,7 @@ def extrair_dados_nfe(xml_conteudo, cnpj_cliente):
     chave = ""
     numero = ""
     valor = ""
+    emit_cnpj = ""
     dest_cnpj = ""
     mes_ref = ""
     ano_ref = None
@@ -906,6 +911,14 @@ def extrair_dados_nfe(xml_conteudo, cnpj_cliente):
                 numero = el.text.strip().lstrip("0") or "0"
             elif nome == "vNF" and el.text and not valor:
                 valor = el.text.strip()
+
+        for emit in xml_doc.iter():
+            if local(emit.tag) == "emit":
+                for filho in emit:
+                    if local(filho.tag) == "CNPJ" and filho.text:
+                        emit_cnpj = somente_digitos(filho.text)
+                        break
+                break
 
         for dest in xml_doc.iter():
             if local(dest.tag) == "dest":
@@ -934,7 +947,7 @@ def extrair_dados_nfe(xml_conteudo, cnpj_cliente):
     except Exception:
         pass
 
-    return chave, numero, valor, dest_cnpj, mes_ref, ano_ref, tipo_doc
+    return chave, numero, valor, emit_cnpj, dest_cnpj, mes_ref, ano_ref, tipo_doc
 
 
 def atualizar_status_dfe(cliente_id, ult_nsu, max_nsu, cstat, xmotivo):
@@ -1101,16 +1114,16 @@ def consultar_dfe_sefaz(cliente, cuf_autor="42", tp_amb="1"):
             with open(caminho_xml, "wb") as f:
                 f.write(xml_conteudo)
 
-            chave, numero_nf, valor_nf, dest_cnpj, mes_ref, ano_ref, tipo_doc = extrair_dados_nfe(xml_conteudo, cnpj)
+            chave, numero_nf, valor_nf, emit_cnpj, dest_cnpj, mes_ref, ano_ref, tipo_doc = extrair_dados_nfe(xml_conteudo, cnpj)
 
-            # Salva apenas XMLs emitidos PARA a empresa. Quando o XML resumido não traz destinatário,
-            # mantém por ser retorno de interesse do CNPJ consultado.
-            if dest_cnpj and dest_cnpj != cnpj:
+            # Salva XMLs emitidos pela empresa ou recebidos pela empresa.
+            # Quando XML resumido não traz emitente/destinatário, mantém por ser retorno de interesse do CNPJ consultado.
+            if (emit_cnpj or dest_cnpj) and emit_cnpj != cnpj and dest_cnpj != cnpj:
                 continue
 
             con.execute(
-                "INSERT INTO xmls_dfe (cliente_id, nsu, schema_xml, chave, arquivo, criado_em, numero_nf, valor_nf, mes_ref, ano_ref, tipo_doc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (cliente["id"], nsu, schema_xml, chave, nome_arquivo, datetime.now().strftime("%d/%m/%Y %H:%M"), numero_nf, valor_nf, mes_ref, ano_ref, tipo_doc)
+                "INSERT INTO xmls_dfe (cliente_id, nsu, schema_xml, chave, arquivo, criado_em, numero_nf, valor_nf, mes_ref, ano_ref, tipo_doc, emit_cnpj, dest_cnpj) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (cliente["id"], nsu, schema_xml, chave, nome_arquivo, datetime.now().strftime("%d/%m/%Y %H:%M"), numero_nf, valor_nf, mes_ref, ano_ref, tipo_doc, emit_cnpj, dest_cnpj)
             )
             salvos += 1
 
@@ -1137,6 +1150,9 @@ def consultar_dfe_sefaz(cliente, cuf_autor="42", tp_amb="1"):
 @app.route("/clientes/xmls/<int:id>")
 @login_required("admin")
 def xmls_cliente(id):
+    mes = request.args.get("mes") or datetime.now().strftime("%m")
+    ano = int(request.args.get("ano") or datetime.now().year)
+
     con = db()
     cliente = con.execute("SELECT * FROM clientes WHERE id=?", (id,)).fetchone()
     if not cliente:
@@ -1144,13 +1160,22 @@ def xmls_cliente(id):
         flash("Cliente não encontrado.")
         return redirect(url_for("clientes"))
 
-    xmls = con.execute(
-        "SELECT * FROM xmls_dfe WHERE cliente_id=? ORDER BY id DESC",
-        (id,)
+    cnpj_cliente = somente_digitos(cliente["cnpj"])
+    filtro_sql = filtro_xml_mes_sql()
+
+    emitidas = con.execute(
+        f"SELECT * FROM xmls_dfe x WHERE cliente_id=? AND emit_cnpj=? AND {filtro_sql} ORDER BY tipo_doc, numero_nf, x.id DESC",
+        (id, cnpj_cliente, mes, ano, mes, str(ano), f"%/{mes}/{ano}%")
     ).fetchall()
+
+    recebidas = con.execute(
+        f"SELECT * FROM xmls_dfe x WHERE cliente_id=? AND (dest_cnpj=? OR (COALESCE(emit_cnpj,'')='' AND COALESCE(dest_cnpj,'')='')) AND {filtro_sql} ORDER BY tipo_doc, numero_nf, x.id DESC",
+        (id, cnpj_cliente, mes, ano, mes, str(ano), f"%/{mes}/{ano}%")
+    ).fetchall()
+
     con.close()
 
-    return render_template("xmls_cliente.html", cliente=cliente, xmls=xmls)
+    return render_template("xmls_cliente.html", cliente=cliente, emitidas=emitidas, recebidas=recebidas, mes=mes, ano=ano)
 
 
 @app.route("/clientes/xmls/<int:id>/buscar", methods=["POST"])
@@ -1189,7 +1214,7 @@ def baixar_todos_xml_cliente(id):
     con = db()
     cliente = con.execute("SELECT * FROM clientes WHERE id=?", (id,)).fetchone()
     filtro_sql = filtro_xml_mes_sql()
-    xmls = con.execute(f"SELECT * FROM xmls_dfe WHERE cliente_id=? AND {filtro_sql} ORDER BY tipo_doc, numero_nf, id DESC",
+    xmls = con.execute(f"SELECT * FROM xmls_dfe x WHERE cliente_id=? AND {filtro_sql} ORDER BY tipo_doc, numero_nf, x.id DESC",
                        (id, mes, ano, mes, str(ano), f"%/{mes}/{ano}%")).fetchall()
     con.close()
 
@@ -1236,12 +1261,22 @@ def xmls_cliente_contabilidade(id):
         flash("Cliente não encontrado ou sem permissão.")
         return redirect(url_for("area_contabilidade"))
 
+    cnpj_cliente = somente_digitos(cliente["cnpj"])
     filtro_sql = filtro_xml_mes_sql()
-    xmls = con.execute(f"SELECT * FROM xmls_dfe WHERE cliente_id=? AND {filtro_sql} ORDER BY tipo_doc, numero_nf, id DESC",
-                       (id, mes, ano, mes, str(ano), f"%/{mes}/{ano}%")).fetchall()
+
+    emitidas = con.execute(
+        f"SELECT * FROM xmls_dfe x WHERE cliente_id=? AND emit_cnpj=? AND {filtro_sql} ORDER BY tipo_doc, numero_nf, x.id DESC",
+        (id, cnpj_cliente, mes, ano, mes, str(ano), f"%/{mes}/{ano}%")
+    ).fetchall()
+
+    recebidas = con.execute(
+        f"SELECT * FROM xmls_dfe x WHERE cliente_id=? AND (dest_cnpj=? OR (COALESCE(emit_cnpj,'')='' AND COALESCE(dest_cnpj,'')='')) AND {filtro_sql} ORDER BY tipo_doc, numero_nf, x.id DESC",
+        (id, cnpj_cliente, mes, ano, mes, str(ano), f"%/{mes}/{ano}%")
+    ).fetchall()
+
     con.close()
 
-    return render_template("xmls_cliente_contabilidade.html", cliente=cliente, xmls=xmls, mes=mes, ano=ano)
+    return render_template("xmls_cliente_contabilidade.html", cliente=cliente, emitidas=emitidas, recebidas=recebidas, mes=mes, ano=ano)
 
 
 @app.route("/contabilidade/xmls/<int:id>/baixar/<arquivo>")
@@ -1274,7 +1309,7 @@ def baixar_todos_xml_cliente_contabilidade(id):
     ).fetchone()
 
     filtro_sql = filtro_xml_mes_sql()
-    xmls = con.execute(f"SELECT * FROM xmls_dfe WHERE cliente_id=? AND {filtro_sql} ORDER BY tipo_doc, numero_nf, id DESC",
+    xmls = con.execute(f"SELECT * FROM xmls_dfe x WHERE cliente_id=? AND {filtro_sql} ORDER BY tipo_doc, numero_nf, x.id DESC",
                        (id, mes, ano, mes, str(ano), f"%/{mes}/{ano}%")).fetchall()
     con.close()
 
