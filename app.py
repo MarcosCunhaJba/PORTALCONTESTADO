@@ -889,6 +889,7 @@ def salvar_certificado_pfx_temporario(caminho_pfx, senha):
 
 
 
+
 def extrair_dados_nfe(xml_conteudo, cnpj_cliente):
     def local(tag):
         return tag.split("}", 1)[-1] if "}" in tag else tag
@@ -909,29 +910,16 @@ def extrair_dados_nfe(xml_conteudo, cnpj_cliente):
         xml_doc = ET.fromstring(xml_conteudo)
         root_name = local(xml_doc.tag)
 
-        # Ignora eventos: ciência da operação, confirmação, cancelamento, manifestação etc.
         nomes_evento = {"procEventoNFe", "resEvento", "evento", "retEvento", "procEventoCTe", "procEventoMDFe"}
         if root_name in nomes_evento or "Evento" in root_name:
             return chave, numero, valor, emit_cnpj, dest_cnpj, mes_ref, ano_ref, tipo_doc, direcao, False
 
-        # Aceita somente documentos fiscais ou resumos de documentos fiscais.
-        nomes_doc = {
-            "nfeProc", "NFe", "resNFe",
-            "cteProc", "CTe", "resCTe",
-            "mdfeProc", "MDFe", "resMDFe"
-        }
-        eh_documento_fiscal = root_name in nomes_doc
+        if root_name in {"nfeProc", "NFe", "resNFe", "cteProc", "CTe", "resCTe", "mdfeProc", "MDFe", "resMDFe"}:
+            eh_documento_fiscal = True
 
         for el in xml_doc.iter():
             nome = local(el.tag)
-
-            if nome == "chNFe" and el.text and not chave:
-                chave = el.text.strip()
-                eh_documento_fiscal = True
-            elif nome == "chCTe" and el.text and not chave:
-                chave = el.text.strip()
-                eh_documento_fiscal = True
-            elif nome == "chMDFe" and el.text and not chave:
+            if nome in ("chNFe", "chCTe", "chMDFe") and el.text and not chave:
                 chave = el.text.strip()
                 eh_documento_fiscal = True
             elif nome == "nNF" and el.text and not numero:
@@ -939,7 +927,6 @@ def extrair_dados_nfe(xml_conteudo, cnpj_cliente):
             elif nome == "vNF" and el.text and not valor:
                 valor = el.text.strip()
 
-        # Emitente em XML completo: <emit><CNPJ>
         for emit in xml_doc.iter():
             if local(emit.tag) == "emit":
                 for filho in emit:
@@ -948,7 +935,6 @@ def extrair_dados_nfe(xml_conteudo, cnpj_cliente):
                         break
                 break
 
-        # Destinatário em XML completo: <dest><CNPJ>
         for dest in xml_doc.iter():
             if local(dest.tag) == "dest":
                 for filho in dest:
@@ -957,8 +943,6 @@ def extrair_dados_nfe(xml_conteudo, cnpj_cliente):
                         break
                 break
 
-        # Resumo resNFe não tem bloco emit; geralmente possui CNPJ do emitente direto.
-        # Se ainda não achou emitente, pega o primeiro CNPJ solto do resumo.
         if not emit_cnpj and root_name in {"resNFe", "resCTe", "resMDFe"}:
             for el in xml_doc.iter():
                 if local(el.tag) == "CNPJ" and el.text:
@@ -973,22 +957,8 @@ def extrair_dados_nfe(xml_conteudo, cnpj_cliente):
             ano_ref = int("20" + aa) if aa.isdigit() else None
             if not numero:
                 numero = chave[25:34].lstrip("0") or "0"
+            tipo_doc = {"55": "NFE", "65": "NFCE", "57": "CTE", "58": "MDFE"}.get(modelo, "OUTROS")
 
-            if modelo == "55":
-                tipo_doc = "NFE"
-            elif modelo == "65":
-                tipo_doc = "NFCE"
-            elif modelo == "57":
-                tipo_doc = "CTE"
-            elif modelo == "58":
-                tipo_doc = "MDFE"
-            else:
-                tipo_doc = "OUTROS"
-
-        # Classificação entrada/saída:
-        # - Emitente = cliente => saída/emitida
-        # - Destinatário = cliente => entrada/recebida
-        # - Resumo sem destinatário: se emitente != cliente, considera recebida, pois veio no interesse do CNPJ consultado.
         if emit_cnpj == cnpj_cliente:
             direcao = "EMITIDA"
         elif dest_cnpj == cnpj_cliente:
@@ -1172,9 +1142,21 @@ def consultar_dfe_sefaz(cliente, cuf_autor="42", tp_amb="1"):
             if not eh_documento_fiscal:
                 continue
 
-            # Salva somente documentos fiscais de saída ou entrada relacionados ao CNPJ do cliente.
-            if direcao not in ("EMITIDA", "RECEBIDA"):
+            # Salva XML quando o CNPJ do cliente aparece como EMITENTE ou DESTINATÁRIO.
+            # Isso permite capturar notas emitidas pela empresa quando a SEFAZ retornar.
+            if emit_cnpj and emit_cnpj == cnpj:
+                direcao = "EMITIDA"
+            elif dest_cnpj and dest_cnpj == cnpj:
+                direcao = "RECEBIDA"
+
+            if not eh_documento_fiscal:
                 continue
+
+            if (emit_cnpj or dest_cnpj) and emit_cnpj != cnpj and dest_cnpj != cnpj:
+                continue
+
+            if not direcao:
+                direcao = "RECEBIDA"
 
             con.execute(
                 "INSERT INTO xmls_dfe (cliente_id, nsu, schema_xml, chave, arquivo, criado_em, numero_nf, valor_nf, mes_ref, ano_ref, tipo_doc, emit_cnpj, dest_cnpj, direcao, modelo_doc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -1221,7 +1203,7 @@ def xmls_cliente(id):
     emitidas = con.execute(
         f"""SELECT * FROM xmls_dfe x
             WHERE cliente_id=?
-              AND (direcao='EMITIDA' OR (COALESCE(direcao,'')='' AND emit_cnpj=?))
+              AND (direcao='EMITIDA' OR emit_cnpj=?)
               AND {filtro_sql}
             ORDER BY x.tipo_doc, x.numero_nf, x.id DESC""",
         (id, cnpj_cliente, mes, ano, mes, str(ano), f"%/{mes}/{ano}%")
@@ -1334,7 +1316,7 @@ def xmls_cliente_contabilidade(id):
     emitidas = con.execute(
         f"""SELECT * FROM xmls_dfe x
             WHERE cliente_id=?
-              AND (direcao='EMITIDA' OR (COALESCE(direcao,'')='' AND emit_cnpj=?))
+              AND (direcao='EMITIDA' OR emit_cnpj=?)
               AND {filtro_sql}
             ORDER BY x.tipo_doc, x.numero_nf, x.id DESC""",
         (id, cnpj_cliente, mes, ano, mes, str(ano), f"%/{mes}/{ano}%")
