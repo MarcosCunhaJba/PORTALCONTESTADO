@@ -753,24 +753,50 @@ def interesses_ch():
 
 def gerar_zip_contabilidade(contabilidade_id, mes, ano):
     con = db()
-    cont = con.execute("SELECT * FROM contabilidades WHERE id=?", (contabilidade_id,)).fetchone()
+
+    cont = con.execute("""
+        SELECT co.id, co.nome, co.email
+        FROM contabilidades co
+        WHERE co.id=?
+    """, (contabilidade_id,)).fetchone()
 
     docs = con.execute("""
-        SELECT d.*, c.razao
+        SELECT 
+            d.id AS documento_id,
+            d.cliente_id AS cliente_id,
+            d.nome_original AS nome_original,
+            d.arquivo AS arquivo,
+            c.razao AS razao
         FROM documentos d
-        JOIN clientes c ON c.id=d.cliente_id
-        WHERE c.contabilidade_id=? AND d.mes=? AND d.ano=?
-        ORDER BY c.razao, d.id
+        JOIN clientes c ON c.id = d.cliente_id
+        WHERE c.contabilidade_id = ?
+          AND d.mes = ?
+          AND d.ano = ?
+        ORDER BY c.razao ASC, d.id ASC
     """, (contabilidade_id, mes, ano)).fetchall()
 
-    filtro_sql = filtro_xml_mes_sql()
-    xmls = con.execute(f"""
-        SELECT x.*, c.razao
-        FROM xmls_dfe x
-        JOIN clientes c ON c.id=x.cliente_id
-        WHERE c.contabilidade_id=? AND {filtro_sql}
-        ORDER BY c.razao, x.tipo_doc, x.numero_nf, x.id
-    """, (contabilidade_id, mes, ano, mes, str(ano), f"%/{mes}/{ano}%")).fetchall()
+    xmls = []
+    try:
+        filtro_sql = filtro_xml_mes_sql()
+        xmls = con.execute(f"""
+            SELECT
+                x.id AS xml_id,
+                x.cliente_id AS cliente_id,
+                x.arquivo AS arquivo,
+                x.tipo_doc AS tipo_doc,
+                x.direcao AS direcao,
+                x.numero_nf AS numero_nf,
+                x.chave AS chave,
+                c.razao AS razao
+            FROM xmls_dfe x
+            JOIN clientes c ON c.id = x.cliente_id
+            WHERE c.contabilidade_id = ?
+              AND {filtro_sql}
+            ORDER BY c.razao ASC, x.direcao ASC, x.tipo_doc ASC, x.numero_nf ASC, x.id ASC
+        """, (contabilidade_id, mes, ano, mes, str(ano), f"%/{mes}/{ano}%")).fetchall()
+    except Exception as e:
+        print("Erro ao buscar XMLs para ZIP:", str(e))
+        xmls = []
 
     if not cont or (not docs and not xmls):
         con.close()
@@ -779,28 +805,36 @@ def gerar_zip_contabilidade(contabilidade_id, mes, ano):
     token = uuid.uuid4().hex
     nome_zip = f"contabilidade_{contabilidade_id}_{ano}_{mes}_{token[:8]}.zip"
     zip_path = os.path.join(ZIP_DIR, nome_zip)
+    os.makedirs(ZIP_DIR, exist_ok=True)
 
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
         for d in docs:
             origem = os.path.join(DOC_DIR, d["arquivo"])
             if os.path.exists(origem):
-                pasta_cliente = secure_filename(d["razao"]) or f"cliente_{d['cliente_id']}"
-                z.write(origem, f"DOCUMENTOS/{pasta_cliente}/{d['nome_original']}")
+                pasta_cliente = secure_filename(d["razao"] or f"cliente_{d['cliente_id']}") or f"cliente_{d['cliente_id']}"
+                nome_arquivo = d["nome_original"] or d["arquivo"]
+                z.write(origem, f"DOCUMENTOS/{pasta_cliente}/{nome_arquivo}")
 
         for x in xmls:
             origem_xml = os.path.join(XML_DIR, str(x["cliente_id"]), x["arquivo"])
             if os.path.exists(origem_xml):
-                pasta_cliente_xml = secure_filename(x["razao"]) or f"cliente_{x['cliente_id']}"
+                pasta_cliente_xml = secure_filename(x["razao"] or f"cliente_{x['cliente_id']}") or f"cliente_{x['cliente_id']}"
+                direcao = x["direcao"] or "RECEBIDA"
                 tipo = x["tipo_doc"] or "OUTROS"
-                z.write(origem_xml, f"XMLS/{pasta_cliente_xml}/{(x['direcao'] or 'RECEBIDA')}/{tipo}/{x['arquivo']}")
+                z.write(origem_xml, f"XMLS/{pasta_cliente_xml}/{direcao}/{tipo}/{x['arquivo']}")
 
     con.execute("""
-        INSERT INTO envios (contabilidade_id, mes, ano, arquivo_zip, token, email_destino, enviado_email, criado_em)
+        INSERT INTO envios (
+            contabilidade_id, mes, ano, arquivo_zip, token, email_destino, enviado_email, criado_em
+        )
         VALUES (?, ?, ?, ?, ?, ?, 0, ?)
     """, (contabilidade_id, mes, ano, nome_zip, token, cont["email"], datetime.now().strftime("%d/%m/%Y %H:%M")))
+
     con.commit()
     con.close()
+
     return token, cont, len(docs) + len(xmls)
+
 
 @app.route("/enviar-documentos/<int:contabilidade_id>")
 @login_required("admin")

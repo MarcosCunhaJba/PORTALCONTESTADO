@@ -1,0 +1,1 @@
+Corrigido erro ambiguous column name criado_em na geração de ZIP/e-mail. Função gerar_zip_contabilidade reescrita com aliases SQL explícitos.\n
