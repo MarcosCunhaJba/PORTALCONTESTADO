@@ -76,8 +76,30 @@ def inject_configuracoes_visuais():
     return {
         "LOGO_TOPO": logo_topo if logo_topo else "logo_ch_contestado.png",
         "LOGO_LOGIN": logo_login if logo_login else (logo_topo if logo_topo else "logo_ch_contestado.png"),
-        "dias_sem_contato": dias_sem_contato
+        "dias_sem_contato": dias_sem_contato,
+        "MESES": MESES,
+        "ANOS": ANOS,
+        "nome_mes": nome_mes
     }
+
+
+MESES = [
+    ("01", "Janeiro"),
+    ("02", "Fevereiro"),
+    ("03", "Março"),
+    ("04", "Abril"),
+    ("05", "Maio"),
+    ("06", "Junho"),
+    ("07", "Julho"),
+    ("08", "Agosto"),
+    ("09", "Setembro"),
+    ("10", "Outubro"),
+    ("11", "Novembro"),
+    ("12", "Dezembro"),
+]
+
+ANOS = list(range(datetime.now().year - 5, datetime.now().year + 2))
+
 
 
 
@@ -1884,15 +1906,36 @@ def api_coletor_xml():
 @app.route("/admin/coletor-status")
 @login_required("admin")
 def coletor_status():
+    busca = request.args.get("busca", "").strip()
+
     con = db()
-    clientes = con.execute("""
-        SELECT id, razao, cnpj, coletor_ultimo_contato, coletor_ultimo_status
+
+    sql = """
+        SELECT id, razao, fantasia, cnpj, coletor_ultimo_contato, coletor_ultimo_status
         FROM clientes
         WHERE COALESCE(ativo,1)=1
-        ORDER BY razao
-    """).fetchall()
+    """
+    params = []
+
+    if busca:
+        termo = f"%{busca}%"
+        termo_cnpj = f"%{somente_digitos(busca)}%"
+        sql += """
+            AND (
+                razao LIKE ?
+                OR COALESCE(fantasia,'') LIKE ?
+                OR cnpj LIKE ?
+                OR REPLACE(REPLACE(REPLACE(cnpj,'.',''),'/',''),'-','') LIKE ?
+            )
+        """
+        params.extend([termo, termo, termo, termo_cnpj])
+
+    sql += " ORDER BY razao"
+
+    clientes = con.execute(sql, params).fetchall()
     con.close()
-    return render_template("coletor_status.html", clientes=clientes)
+
+    return render_template("coletor_status.html", clientes=clientes, busca=busca)
 
 
 @app.route("/admin/aparencia", methods=["GET", "POST"])

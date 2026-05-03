@@ -5,7 +5,16 @@
 
 <div class="card">
     <h2>Monitoramento dos coletores</h2>
-    <p style="color:#64748b;">Clientes sem comunicação por muitos dias devem ser conferidos com o cliente.</p>
+    <p style="color:#64748b;">Filtre por nome fantasia, razão social ou CNPJ para localizar o cliente.</p>
+
+    <form method="get" class="filters" style="margin-top:14px;">
+        <div class="field" style="min-width:320px;">
+            <label>Buscar cliente/CNPJ</label>
+            <input name="busca" value="{{ busca or '' }}" placeholder="Digite fantasia, razão ou CNPJ">
+        </div>
+        <button class="btn">Filtrar</button>
+        <a class="btn btn-light" href="{{ url_for('coletor_status') }}">Limpar</a>
+    </form>
 </div>
 
 <div class="card">
@@ -21,7 +30,12 @@
         {% for c in clientes %}
             {% set dias = dias_sem_contato(c.coletor_ultimo_contato) %}
             <tr>
-                <td>{{ c.razao }}</td>
+                <td>
+                    <b>{{ c.fantasia or c.razao }}</b>
+                    {% if c.fantasia and c.razao %}
+                        <br><small style="color:#64748b;">{{ c.razao }}</small>
+                    {% endif %}
+                </td>
                 <td>{{ c.cnpj }}</td>
                 <td>{{ c.coletor_ultimo_contato or 'Nunca comunicou' }}</td>
                 <td>
@@ -46,6 +60,9 @@
                 </td>
             </tr>
         {% endfor %}
+        {% if not clientes %}
+            <tr><td colspan="6">Nenhum cliente encontrado.</td></tr>
+        {% endif %}
     </table>
 </div>
 
