@@ -68,6 +68,7 @@ for pasta in (DATA_DIR, UPLOAD_DIR, DOC_DIR, CERT_DIR, ZIP_DIR, XML_DIR):
     os.makedirs(pasta, exist_ok=True)
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "ch-contestado-chave-segura-2026-trocar-no-railway")
 
 @app.context_processor
 def inject_configuracoes_visuais():
