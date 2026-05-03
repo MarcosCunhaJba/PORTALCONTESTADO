@@ -1218,6 +1218,223 @@ def consultar_dfe_sefaz(cliente, cuf_autor="42", tp_amb="1"):
                     pass
 
 
+
+# =========================================================
+# DOWNLOAD DO COLETOR CONFIGURADO POR CLIENTE
+# =========================================================
+
+def codigo_coletor_cliente():
+    return r"""import os
+import json
+import time
+import hashlib
+import requests
+from pathlib import Path
+from datetime import datetime
+
+CONFIG_FILE = "config.json"
+LOG_FILE = "log.txt"
+ENVIADOS_FILE = "enviados.json"
+
+def log(msg):
+    txt = f"[{datetime.now().strftime('%d/%m/%Y %H:%M:%S')}] {msg}"
+    print(txt)
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(txt + "\\n")
+
+def carregar_config():
+    with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def carregar_enviados():
+    if not os.path.exists(ENVIADOS_FILE):
+        return {}
+    try:
+        with open(ENVIADOS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def salvar_enviados(data):
+    with open(ENVIADOS_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+def hash_arquivo(caminho):
+    h = hashlib.sha256()
+    with open(caminho, "rb") as f:
+        for bloco in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(bloco)
+    return h.hexdigest()
+
+def montar_paths(cfg):
+    cnpj = "".join(ch for ch in str(cfg["cnpj"]) if ch.isdigit())
+    disco = cfg.get("disco", "C").replace(":", "").upper()
+    ano_mes = datetime.now().strftime("%Y%m")
+
+    bases = [
+        f"{disco}:/CHSISTEMAS/{cnpj}",
+        f"{disco}:/CH Sistemas/{cnpj}"
+    ]
+
+    tipos = cfg.get("tipos", ["NFE", "NFCE"])
+    paths = []
+
+    for base in bases:
+        for tipo in tipos:
+            paths.append(f"{base}/{tipo}/{cnpj}/{ano_mes}/AUTORIZADOS")
+
+    return paths
+
+def enviar_xml(xml_path, cfg):
+    url = cfg["portal_url"].rstrip("/") + "/api/coletor/xml"
+    headers = {"X-API-TOKEN": cfg["api_token"]}
+    data = {"cnpj": cfg["cnpj"]}
+
+    with open(xml_path, "rb") as f:
+        files = {"arquivo": (os.path.basename(xml_path), f, "application/xml")}
+        r = requests.post(url, headers=headers, files=files, data=data, timeout=60)
+
+    try:
+        return r.status_code, r.json()
+    except Exception:
+        return r.status_code, {"ok": False, "erro": r.text}
+
+def executar_uma_vez(cfg, enviados):
+    paths = montar_paths(cfg)
+    enviados_novos = 0
+
+    for p in paths:
+        pasta = Path(p)
+        log(f"Verificando: {p}")
+
+        if not pasta.exists():
+            log("Pasta não existe.")
+            continue
+
+        xmls = list(pasta.rglob("*.xml"))
+        log(f"XMLs encontrados: {len(xmls)}")
+
+        for xml in xmls:
+            caminho = str(xml)
+
+            try:
+                h = hash_arquivo(caminho)
+
+                if enviados.get(caminho) == h:
+                    continue
+
+                status, retorno = enviar_xml(caminho, cfg)
+
+                if status in (200, 201) and retorno.get("ok"):
+                    enviados[caminho] = h
+                    enviados_novos += 1
+                    log(f"OK: {caminho} | {retorno.get('status')} | {retorno.get('direcao')} | {retorno.get('chave')}")
+                else:
+                    log(f"ERRO: {caminho} | HTTP {status} | {retorno}")
+
+            except Exception as e:
+                log(f"FALHA: {caminho} | {e}")
+
+    return enviados_novos
+
+def main():
+    cfg = carregar_config()
+    enviados = carregar_enviados()
+
+    log("Coletor CH iniciado.")
+    log(f"Portal: {cfg['portal_url']}")
+    log(f"CNPJ: {cfg['cnpj']}")
+    log(f"Disco: {cfg.get('disco', 'C')}")
+    log(f"Intervalo: {cfg.get('intervalo_segundos', 60)}s")
+
+    modo_continuo = cfg.get("modo_continuo", True)
+
+    while True:
+        novos = executar_uma_vez(cfg, enviados)
+        salvar_enviados(enviados)
+        log(f"Ciclo finalizado. Novos enviados: {novos}")
+
+        if not modo_continuo:
+            break
+
+        time.sleep(int(cfg.get("intervalo_segundos", 60)))
+
+if __name__ == "__main__":
+    main()
+"""
+
+
+@app.route("/clientes/<int:id>/baixar-coletor")
+@login_required("admin")
+def baixar_coletor_cliente(id):
+    con = db()
+    cliente = con.execute("SELECT * FROM clientes WHERE id=?", (id,)).fetchone()
+    con.close()
+
+    if not cliente:
+        flash("Cliente não encontrado.")
+        return redirect(url_for("clientes"))
+
+    token = os.environ.get("COLETOR_API_TOKEN", "").strip()
+    if not token:
+        flash("Configure a variável COLETOR_API_TOKEN no Railway antes de baixar o coletor.")
+        return redirect(url_for("clientes"))
+
+    cnpj = somente_digitos(cliente["cnpj"])
+    if not cnpj:
+        flash("Cliente sem CNPJ cadastrado. Informe o CNPJ antes de baixar o coletor.")
+        return redirect(url_for("clientes"))
+
+    portal_url = request.host_url.rstrip("/")
+
+    config = {
+        "portal_url": portal_url,
+        "api_token": token,
+        "cnpj": cnpj,
+        "disco": "C",
+        "tipos": ["NFE", "NFCE"],
+        "intervalo_segundos": 60,
+        "modo_continuo": True
+    }
+
+    nome_cliente = secure_filename(cliente["razao"] or f"cliente_{id}") or f"cliente_{id}"
+
+    memoria = io.BytesIO()
+    with zipfile.ZipFile(memoria, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("coletor.py", codigo_coletor_cliente())
+        z.writestr("config.json", json.dumps(config, indent=2, ensure_ascii=False))
+        z.writestr("requirements.txt", "requests\n")
+        z.writestr("instalar_dependencias.bat", "@echo off\ncd /d %~dp0\npython -m pip install -r requirements.txt\npause\n")
+        z.writestr("rodar_coletor.bat", "@echo off\ncd /d %~dp0\npython coletor.py\npause\n")
+        z.writestr("README.txt", f"""COLETOR XML CH CONTESTADO
+
+Cliente: {cliente['razao']}
+CNPJ: {cnpj}
+
+Este coletor já está configurado para este cliente.
+
+Como usar:
+1) Extraia este ZIP no computador do cliente.
+2) Rode instalar_dependencias.bat uma vez.
+3) Rode rodar_coletor.bat.
+
+Por padrão, o coletor procura em:
+C:\\CHSISTEMAS\\{cnpj}\\NFE\\{cnpj}\\ANOMES\\AUTORIZADOS
+C:\\CHSISTEMAS\\{cnpj}\\NFCE\\{cnpj}\\ANOMES\\AUTORIZADOS
+
+Também tenta:
+C:\\CH Sistemas\\...
+
+Se o XML estiver em outro disco, edite config.json e troque:
+"disco": "C"
+para D, E etc.
+""")
+
+    memoria.seek(0)
+    nome_zip = f"coletor_{nome_cliente}_{cnpj}.zip"
+    return send_file(memoria, as_attachment=True, download_name=nome_zip, mimetype="application/zip")
+
+
 @app.route("/clientes/xmls/<int:id>")
 @login_required("admin")
 def xmls_cliente(id):
