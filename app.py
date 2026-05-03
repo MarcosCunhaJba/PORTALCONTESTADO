@@ -1465,7 +1465,7 @@ def xmls_cliente(id):
             WHERE cliente_id=?
               AND (
                     direcao='RECEBIDA'
-                    OR (COALESCE(direcao,'')='' AND dest_cnpj=?)
+                    OR dest_cnpj=?
                     OR (COALESCE(direcao,'')='' AND COALESCE(emit_cnpj,'')<>? AND COALESCE(dest_cnpj,'')='')
                   )
               AND {filtro_sql}

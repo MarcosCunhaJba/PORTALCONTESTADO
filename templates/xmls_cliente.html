@@ -1,3 +1,27 @@
+
+<div class="card">
+    <h3>Filtrar mês/ano</h3>
+    <form class="filters" method="get">
+        <div class="field">
+            <label>Mês</label>
+            <select name="mes">
+                {% for k,v in MESES %}
+                <option value="{{k}}" {% if k==mes %}selected{% endif %}>{{v}}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="field">
+            <label>Ano</label>
+            <select name="ano">
+                {% for a in ANOS %}
+                <option value="{{a}}" {% if a==ano %}selected{% endif %}>{{a}}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <button class="btn">Filtrar XMLs</button>
+    </form>
+</div>
+
 {% extends 'base.html' %}
 {% block title %}XMLs do Cliente{% endblock %}
 {% block page_title %}XMLs do Cliente{% endblock %}
@@ -21,7 +45,7 @@
 <div class="card">
     <div class="actions-bar">
         <div>
-            <h3>XMLs do mês {{nome_mes(mes)}}/{{ano}}</h3>
+            <h3>XMLs encontrados - {{nome_mes(mes)}}/{{ano}}</h3>
             <p>Baixe individualmente ou todos em ZIP, separados por tipo fiscal.</p>
         </div>
         <a class="btn btn-yellow" href="{{ url_for('baixar_todos_xml_cliente', id=cliente.id, mes=mes, ano=ano) }}">Baixar todos em ZIP</a>
