@@ -1459,6 +1459,144 @@ def formatar_tamanho(bytes_total):
     return f"{bytes_total:.2f} PB"
 
 
+
+# =========================================================
+# API DO COLETOR DE XML LOCAL
+# =========================================================
+
+@app.route("/api/coletor/xml", methods=["POST"])
+def api_coletor_xml():
+    token_config = os.environ.get("COLETOR_API_TOKEN", "").strip()
+    token_recebido = request.headers.get("X-API-TOKEN", "").strip()
+
+    if not token_config:
+        return jsonify({"ok": False, "erro": "COLETOR_API_TOKEN não configurado no Railway."}), 500
+
+    if token_recebido != token_config:
+        return jsonify({"ok": False, "erro": "Token inválido."}), 401
+
+    arquivo = request.files.get("arquivo")
+    cnpj_informado = somente_digitos(request.form.get("cnpj", ""))
+
+    if not arquivo or not arquivo.filename:
+        return jsonify({"ok": False, "erro": "Arquivo XML não enviado."}), 400
+
+    try:
+        xml_conteudo = arquivo.read()
+
+        chave, numero_nf, valor_nf, emit_cnpj, dest_cnpj, mes_ref, ano_ref, tipo_doc, direcao, eh_documento_fiscal = extrair_dados_nfe(xml_conteudo, cnpj_informado)
+
+        if not eh_documento_fiscal:
+            return jsonify({"ok": False, "erro": "Arquivo ignorado: não é XML de documento fiscal."}), 400
+
+        cnpjs_possiveis = []
+        if cnpj_informado:
+            cnpjs_possiveis.append(cnpj_informado)
+        if emit_cnpj:
+            cnpjs_possiveis.append(emit_cnpj)
+        if dest_cnpj:
+            cnpjs_possiveis.append(dest_cnpj)
+
+        cnpjs_possiveis = list(dict.fromkeys([c for c in cnpjs_possiveis if c]))
+
+        con = db()
+        cliente = None
+
+        for cnpj_busca in cnpjs_possiveis:
+            cliente = con.execute("""
+                SELECT * FROM clientes
+                WHERE REPLACE(REPLACE(REPLACE(cnpj,'.',''),'/',''),'-','')=?
+                  AND COALESCE(ativo,1)=1
+                LIMIT 1
+            """, (cnpj_busca,)).fetchone()
+            if cliente:
+                break
+
+        if not cliente:
+            con.close()
+            return jsonify({"ok": False, "erro": "Cliente não encontrado para o CNPJ do XML."}), 404
+
+        cnpj_cliente = somente_digitos(cliente["cnpj"])
+
+        if emit_cnpj == cnpj_cliente:
+            direcao = "EMITIDA"
+        elif dest_cnpj == cnpj_cliente:
+            direcao = "RECEBIDA"
+        elif not direcao:
+            direcao = "RECEBIDA"
+
+        if chave:
+            existente = con.execute(
+                "SELECT id FROM xmls_dfe WHERE cliente_id=? AND chave=?",
+                (cliente["id"], chave)
+            ).fetchone()
+            if existente:
+                con.close()
+                return jsonify({
+                    "ok": True,
+                    "status": "duplicado",
+                    "mensagem": "XML já existia.",
+                    "chave": chave
+                })
+
+        pasta_cliente = os.path.join(XML_DIR, str(cliente["id"]))
+        os.makedirs(pasta_cliente, exist_ok=True)
+
+        nome_original = secure_filename(arquivo.filename)
+        if not nome_original.lower().endswith(".xml"):
+            nome_original += ".xml"
+
+        nome_salvo = f"{uuid.uuid4().hex}_{nome_original}"
+        caminho_xml = os.path.join(pasta_cliente, nome_salvo)
+
+        with open(caminho_xml, "wb") as f:
+            f.write(xml_conteudo)
+
+        nsu = f"COLETOR_{uuid.uuid4().hex[:12]}"
+
+        con.execute("""
+            INSERT INTO xmls_dfe (
+                cliente_id, nsu, schema_xml, chave, arquivo, criado_em,
+                numero_nf, valor_nf, mes_ref, ano_ref, tipo_doc,
+                emit_cnpj, dest_cnpj, direcao, modelo_doc
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            cliente["id"],
+            nsu,
+            "coletor_xml",
+            chave,
+            nome_salvo,
+            datetime.now().strftime("%d/%m/%Y %H:%M"),
+            numero_nf,
+            valor_nf,
+            mes_ref,
+            ano_ref,
+            tipo_doc,
+            emit_cnpj,
+            dest_cnpj,
+            direcao,
+            tipo_doc
+        ))
+
+        con.commit()
+        con.close()
+
+        return jsonify({
+            "ok": True,
+            "status": "salvo",
+            "cliente_id": cliente["id"],
+            "cliente": cliente["razao"],
+            "direcao": direcao,
+            "tipo_doc": tipo_doc,
+            "numero_nf": numero_nf,
+            "chave": chave
+        })
+
+    except Exception as e:
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
 @app.route("/admin/storage")
 @login_required("admin")
 def painel_storage():
