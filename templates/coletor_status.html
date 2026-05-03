@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+{% block title %}Status dos Coletores{% endblock %}
+{% block page_title %}Status dos Coletores{% endblock %}
+{% block content %}
+
+<div class="card">
+    <h2>Monitoramento dos coletores</h2>
+    <p style="color:#64748b;">Clientes sem comunicação por muitos dias devem ser conferidos com o cliente.</p>
+</div>
+
+<div class="card">
+    <table>
+        <tr>
+            <th>Cliente</th>
+            <th>CNPJ</th>
+            <th>Último contato</th>
+            <th>Dias sem comunicar</th>
+            <th>Status</th>
+            <th>Ação</th>
+        </tr>
+        {% for c in clientes %}
+            {% set dias = dias_sem_contato(c.coletor_ultimo_contato) %}
+            <tr>
+                <td>{{ c.razao }}</td>
+                <td>{{ c.cnpj }}</td>
+                <td>{{ c.coletor_ultimo_contato or 'Nunca comunicou' }}</td>
+                <td>
+                    {% if dias is none %}
+                        -
+                    {% else %}
+                        {{ dias }} dia(s)
+                    {% endif %}
+                </td>
+                <td>
+                    {% if dias is none %}
+                        <span class="status-pend">Sem comunicação</span>
+                    {% elif dias >= 3 %}
+                        <span class="status-pend">Atenção</span>
+                    {% else %}
+                        <span class="status-ok">OK</span>
+                    {% endif %}
+                    {% if c.coletor_ultimo_status %}<br><small>{{ c.coletor_ultimo_status }}</small>{% endif %}
+                </td>
+                <td>
+                    <a class="btn btn-light" href="{{ url_for('baixar_coletor_cliente', id=c.id) }}">Baixar coletor</a>
+                </td>
+            </tr>
+        {% endfor %}
+    </table>
+</div>
+
+{% endblock %}

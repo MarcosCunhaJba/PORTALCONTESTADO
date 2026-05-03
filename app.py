@@ -1,4 +1,50 @@
 
+# =========================================================
+# CONFIGURAÇÕES VISUAIS / LOGO
+# =========================================================
+
+def get_config(chave, padrao=""):
+    try:
+        con = db()
+        row = con.execute("SELECT valor FROM configuracoes WHERE chave=?", (chave,)).fetchone()
+        con.close()
+        return row["valor"] if row and row["valor"] is not None else padrao
+    except Exception:
+        return padrao
+
+
+def set_config(chave, valor):
+    con = db()
+    con.execute("""
+        INSERT INTO configuracoes (chave, valor)
+        VALUES (?, ?)
+        ON CONFLICT(chave) DO UPDATE SET valor=excluded.valor
+    """, (chave, valor))
+    con.commit()
+    con.close()
+
+
+@app.context_processor
+def inject_configuracoes_visuais():
+    logo_topo = get_config("logo_topo", "")
+    logo_login = get_config("logo_login", "")
+
+    return {
+        "LOGO_TOPO": logo_topo if logo_topo else "logo_ch_contestado.png",
+        "LOGO_LOGIN": logo_login if logo_login else (logo_topo if logo_topo else "logo_ch_contestado.png")
+    }
+
+
+def dias_sem_contato(data_txt):
+    if not data_txt:
+        return None
+    try:
+        dt = datetime.strptime(data_txt, "%d/%m/%Y %H:%M")
+        return (datetime.now() - dt).days
+    except Exception:
+        return None
+
+
 import os
 import base64
 import gzip
@@ -109,6 +155,12 @@ def init_db():
         enviado_email INTEGER DEFAULT 0,
         criado_em TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS configuracoes (
+        chave TEXT PRIMARY KEY,
+        valor TEXT
+    );
+
     CREATE TABLE IF NOT EXISTS interesses_ch (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER,
@@ -170,6 +222,8 @@ def init_db():
     ensure_column(cur, "clientes", "arquivo_certificado", "TEXT")
     ensure_column(cur, "clientes", "criado_em", "TEXT")
     ensure_column(cur, "clientes", "ativo", "INTEGER DEFAULT 1")
+    ensure_column(cur, "clientes", "coletor_ultimo_contato", "TEXT")
+    ensure_column(cur, "clientes", "coletor_ultimo_status", "TEXT")
 
     ensure_column(cur, "documentos", "cliente_id", "INTEGER")
     ensure_column(cur, "documentos", "mes", "TEXT")
@@ -1748,6 +1802,12 @@ def api_coletor_xml():
                 (cliente["id"], chave)
             ).fetchone()
             if existente:
+                con.execute("""
+                    UPDATE clientes
+                    SET coletor_ultimo_contato=?, coletor_ultimo_status=?
+                    WHERE id=?
+                """, (datetime.now().strftime("%d/%m/%Y %H:%M"), "DUPLICADO", cliente["id"]))
+                con.commit()
                 con.close()
                 return jsonify({
                     "ok": True,
@@ -1796,6 +1856,12 @@ def api_coletor_xml():
             tipo_doc
         ))
 
+        con.execute("""
+            UPDATE clientes
+            SET coletor_ultimo_contato=?, coletor_ultimo_status=?
+            WHERE id=?
+        """, (datetime.now().strftime("%d/%m/%Y %H:%M"), "OK", cliente["id"]))
+
         con.commit()
         con.close()
 
@@ -1812,6 +1878,59 @@ def api_coletor_xml():
 
     except Exception as e:
         return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+
+
+@app.route("/admin/coletor-status")
+@login_required("admin")
+def coletor_status():
+    con = db()
+    clientes = con.execute("""
+        SELECT id, razao, cnpj, coletor_ultimo_contato, coletor_ultimo_status
+        FROM clientes
+        WHERE COALESCE(ativo,1)=1
+        ORDER BY razao
+    """).fetchall()
+    con.close()
+    return render_template("coletor_status.html", clientes=clientes)
+
+
+@app.route("/admin/aparencia", methods=["GET", "POST"])
+@login_required("admin")
+def configurar_aparencia():
+    if request.method == "POST":
+        os.makedirs(os.path.join("static", "uploads"), exist_ok=True)
+
+        logo_topo = request.files.get("logo_topo")
+        logo_login = request.files.get("logo_login")
+
+        if logo_topo and logo_topo.filename:
+            ext = os.path.splitext(logo_topo.filename)[1].lower()
+            if ext not in [".png", ".jpg", ".jpeg", ".webp"]:
+                flash("Logo do topo precisa ser PNG, JPG ou WEBP.")
+                return redirect(url_for("configurar_aparencia"))
+
+            nome = f"uploads/logo_topo_{uuid.uuid4().hex}{ext}"
+            caminho = os.path.join("static", nome)
+            logo_topo.save(caminho)
+            set_config("logo_topo", nome)
+
+        if logo_login and logo_login.filename:
+            ext = os.path.splitext(logo_login.filename)[1].lower()
+            if ext not in [".png", ".jpg", ".jpeg", ".webp"]:
+                flash("Logo do login precisa ser PNG, JPG ou WEBP.")
+                return redirect(url_for("configurar_aparencia"))
+
+            nome = f"uploads/logo_login_{uuid.uuid4().hex}{ext}"
+            caminho = os.path.join("static", nome)
+            logo_login.save(caminho)
+            set_config("logo_login", nome)
+
+        flash("Aparência atualizada com sucesso.")
+        return redirect(url_for("configurar_aparencia"))
+
+    return render_template("aparencia.html")
 
 
 @app.route("/admin/storage")
