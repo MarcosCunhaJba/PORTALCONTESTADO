@@ -24,16 +24,6 @@ def set_config(chave, valor):
     con.close()
 
 
-@app.context_processor
-def inject_configuracoes_visuais():
-    logo_topo = get_config("logo_topo", "")
-    logo_login = get_config("logo_login", "")
-
-    return {
-        "LOGO_TOPO": logo_topo if logo_topo else "logo_ch_contestado.png",
-        "LOGO_LOGIN": logo_login if logo_login else (logo_topo if logo_topo else "logo_ch_contestado.png")
-    }
-
 
 def dias_sem_contato(data_txt):
     if not data_txt:
@@ -78,6 +68,18 @@ for pasta in (DATA_DIR, UPLOAD_DIR, DOC_DIR, CERT_DIR, ZIP_DIR, XML_DIR):
     os.makedirs(pasta, exist_ok=True)
 
 app = Flask(__name__)
+
+@app.context_processor
+def inject_configuracoes_visuais():
+    logo_topo = get_config("logo_topo", "")
+    logo_login = get_config("logo_login", "")
+
+    return {
+        "LOGO_TOPO": logo_topo if logo_topo else "logo_ch_contestado.png",
+        "LOGO_LOGIN": logo_login if logo_login else (logo_topo if logo_topo else "logo_ch_contestado.png"),
+        "dias_sem_contato": dias_sem_contato
+    }
+
 app.secret_key = os.environ.get("SECRET_KEY", "ch_contestado_secret_key")
 
 MESES = [
@@ -849,7 +851,7 @@ def gerar_zip_contabilidade(contabilidade_id, mes, ano):
             ORDER BY c.razao ASC, x.direcao ASC, x.tipo_doc ASC, x.numero_nf ASC, x.id ASC
         """, (contabilidade_id, mes, ano, mes, str(ano), f"%/{mes}/{ano}%")).fetchall()
     except Exception as e:
-        print("Erro ao buscar XMLs para ZIP:", str(e))
+        print("Erro ao buscar XMLs para ZIP da contabilidade:", str(e))
         xmls = []
 
     if not cont or (not docs and not xmls):
@@ -882,7 +884,15 @@ def gerar_zip_contabilidade(contabilidade_id, mes, ano):
             contabilidade_id, mes, ano, arquivo_zip, token, email_destino, enviado_email, criado_em
         )
         VALUES (?, ?, ?, ?, ?, ?, 0, ?)
-    """, (contabilidade_id, mes, ano, nome_zip, token, cont["email"], datetime.now().strftime("%d/%m/%Y %H:%M")))
+    """, (
+        contabilidade_id,
+        mes,
+        ano,
+        nome_zip,
+        token,
+        cont["email"],
+        datetime.now().strftime("%d/%m/%Y %H:%M")
+    ))
 
     con.commit()
     con.close()
