@@ -1,103 +1,217 @@
-
-<div class="card">
-    <h3>Filtrar mês/ano</h3>
-    <form class="filters" method="get">
-        <div class="field">
-            <label>Mês</label>
-            <select name="mes">
-                {% for k,v in MESES %}
-                <option value="{{k}}" {% if k==mes %}selected{% endif %}>{{v}}</option>
-                {% endfor %}
-            </select>
-        </div>
-        <div class="field">
-            <label>Ano</label>
-            <select name="ano">
-                {% for a in ANOS %}
-                <option value="{{a}}" {% if a==ano %}selected{% endif %}>{{a}}</option>
-                {% endfor %}
-            </select>
-        </div>
-        <button class="btn">Filtrar XMLs</button>
-    </form>
-</div>
-
 {% extends 'base.html' %}
 {% block title %}XMLs do Cliente{% endblock %}
 {% block page_title %}XMLs do Cliente{% endblock %}
+
 {% block content %}
-<div class="card">
-    <h2>{{cliente.razao}}</h2>
-    <p><b>CNPJ:</b> {{cliente.cnpj or '-'}}</p>
-    <p><b>Certificado:</b> {% if cliente.arquivo_certificado %}Cadastrado{% else %}<span class="status-pend">Não cadastrado</span>{% endif %}</p>
+<style>
+    .xml-header-card{
+        background:#fff;
+        border-radius:22px;
+        padding:22px;
+        border:1px solid #E5EAF2;
+        box-shadow:0 14px 34px rgba(11,47,91,.08);
+        margin-bottom:18px;
+    }
+    .xml-client-title{
+        display:flex;
+        align-items:center;
+        gap:10px;
+        margin:0 0 8px;
+        color:#0B2F5B;
+        font-size:28px;
+        font-weight:900;
+    }
+    .xml-muted{color:#64748b;margin:4px 0;}
+    .xml-filter-card{
+        background:#fff;
+        border-radius:22px;
+        padding:22px;
+        border:1px solid #E5EAF2;
+        box-shadow:0 14px 34px rgba(11,47,91,.08);
+        margin-bottom:18px;
+    }
+    .xml-filter-title{
+        margin:0 0 14px;
+        color:#0B2F5B;
+        font-size:20px;
+        font-weight:900;
+    }
+    .xml-filter-row{
+        display:flex;
+        gap:14px;
+        align-items:flex-end;
+        flex-wrap:wrap;
+    }
+    .xml-filter-field{
+        display:flex;
+        flex-direction:column;
+        gap:6px;
+    }
+    .xml-filter-field label{
+        font-size:13px;
+        font-weight:900;
+        color:#334155;
+    }
+    .xml-filter-field select{
+        min-width:180px;
+        height:44px;
+        padding:9px 12px;
+        border:1px solid #CBD5E1;
+        border-radius:12px;
+        background:#fff;
+        color:#0F172A;
+        font-size:15px;
+    }
+    .xml-tabs{
+        display:flex;
+        gap:10px;
+        margin:18px 0;
+        flex-wrap:wrap;
+    }
+    .xml-tab-btn{
+        border:0;
+        border-radius:12px;
+        padding:12px 16px;
+        font-weight:900;
+        cursor:pointer;
+        background:#EAF3FF;
+        color:#0B2F5B;
+    }
+    .xml-tab-btn.active{
+        background:#0057B8;
+        color:white;
+    }
+    .xml-tab-pane{display:none;}
+    .xml-tab-pane.active{display:block;}
+    .xml-actions-bar{
+        display:flex;
+        justify-content:space-between;
+        align-items:center;
+        gap:12px;
+        flex-wrap:wrap;
+        margin-bottom:14px;
+    }
+</style>
+
+<div class="xml-header-card">
+    <h2 class="xml-client-title">🔎 {{ cliente.razao }}</h2>
+    <p class="xml-muted"><b>CNPJ:</b> {{ cliente.cnpj or '-' }}</p>
+    <p class="xml-muted">
+        <b>Certificado:</b>
+        {% if cliente.arquivo_certificado %}
+            <span class="status-ok">Cadastrado</span>
+        {% else %}
+            <span class="status-pend">Não cadastrado</span>
+        {% endif %}
+    </p>
 </div>
 
-<div class="card">
-    <h3>Buscar XMLs</h3>
-    <p style="color:#64748b;">A busca separa as notas em emitidas pela empresa e recebidas pela empresa. Se retornar 656, aguarde 1 hora.</p>
-    <form method="post" action="{{ url_for('buscar_xmls_cliente', id=cliente.id) }}" class="grid2">
-        <div class="field"><label>Ambiente</label><select name="tp_amb"><option value="1">Produção</option><option value="2">Homologação</option></select></div>
-        <div class="field"><label>Código UF Autor</label><input name="cuf_autor" value="42"></div>
-        <div><button class="btn">Buscar XMLs agora</button> <a class="btn btn-light" href="{{ url_for('clientes') }}">Voltar</a></div>
+<div class="xml-filter-card">
+    <h3 class="xml-filter-title">Filtrar XMLs por mês</h3>
+    <form method="get" class="xml-filter-row">
+        <div class="xml-filter-field">
+            <label>Mês</label>
+            <select name="mes">
+                {% for k,v in MESES %}
+                    <option value="{{ k }}" {% if k == mes %}selected{% endif %}>{{ v }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="xml-filter-field">
+            <label>Ano</label>
+            <select name="ano">
+                {% for a in ANOS %}
+                    <option value="{{ a }}" {% if a == ano %}selected{% endif %}>{{ a }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <button class="btn" type="submit">Filtrar XMLs</button>
+        <a class="btn btn-light" href="{{ url_for('clientes') }}">Voltar</a>
     </form>
 </div>
 
 <div class="card">
-    <div class="actions-bar">
+    <h3>Buscar XMLs na SEFAZ</h3>
+    <p style="color:#64748b;">Use este botão para buscar XMLs via certificado digital. Para XMLs emitidos pelo sistema, use o coletor local.</p>
+    <form method="post" action="{{ url_for('buscar_xmls_cliente', id=cliente.id) }}" class="xml-filter-row">
+        <div class="xml-filter-field">
+            <label>Ambiente</label>
+            <select name="tp_amb">
+                <option value="1">Produção</option>
+                <option value="2">Homologação</option>
+            </select>
+        </div>
+        <div class="xml-filter-field">
+            <label>Código UF Autor</label>
+            <input name="cuf_autor" value="42" style="height:44px;border:1px solid #CBD5E1;border-radius:12px;padding:9px 12px;">
+        </div>
+        <button class="btn" type="submit">Buscar XMLs agora</button>
+    </form>
+</div>
+
+<div class="card">
+    <div class="xml-actions-bar">
         <div>
-            <h3>XMLs encontrados - {{nome_mes(mes)}}/{{ano}}</h3>
-            <p>Baixe individualmente ou todos em ZIP, separados por tipo fiscal.</p>
+            <h3>XMLs encontrados - {{ nome_mes(mes) }}/{{ ano }}</h3>
+            <p style="color:#64748b;margin:4px 0;">Baixe individualmente ou todos em ZIP, separados por tipo fiscal.</p>
         </div>
         <a class="btn btn-yellow" href="{{ url_for('baixar_todos_xml_cliente', id=cliente.id, mes=mes, ano=ano) }}">Baixar todos em ZIP</a>
     </div>
 
-    <style>
-      .tabs-xml{display:flex;gap:10px;margin:15px 0;flex-wrap:wrap}
-      .tab-btn{border:0;border-radius:12px;padding:11px 16px;font-weight:900;cursor:pointer;background:#EAF3FF;color:#0B2F5B}
-      .tab-btn.active{background:#0057B8;color:white}
-      .tab-pane{display:none}
-      .tab-pane.active{display:block}
-    </style>
-
-    <div class="tabs-xml">
-      <button type="button" class="tab-btn active" onclick="abrirTabXml('emitidas')">NFs emitidas pela empresa ({{emitidas|length}})</button>
-      <button type="button" class="tab-btn" onclick="abrirTabXml('recebidas')">NFs recebidas pela empresa ({{recebidas|length}})</button>
+    <div class="xml-tabs">
+        <button type="button" class="xml-tab-btn active" onclick="abrirTabXml(event, 'emitidas')">
+            NFs emitidas pela empresa ({{ emitidas|length }})
+        </button>
+        <button type="button" class="xml-tab-btn" onclick="abrirTabXml(event, 'recebidas')">
+            NFs recebidas pela empresa ({{ recebidas|length }})
+        </button>
     </div>
 
-    <div id="tab-emitidas" class="tab-pane active"><table>
-<tr><th>Data</th><th>Número NF</th><th>Chave</th><th>Valor</th><th>Arquivo</th></tr>
-{% for x in emitidas %}
-<tr>
-<td>{{x.criado_em}}</td>
-<td>{{x.numero_nf or '-'}}</td>
-<td>{{x.chave or '-'}}</td>
-<td>{% if x.valor_nf %}R$ {{x.valor_nf}}{% else %}-{% endif %}</td>
-<td><a class="btn btn-light" href="{{ url_for('baixar_xml_cliente', id=cliente.id, arquivo=x.arquivo) }}">Baixar XML</a></td>
-</tr>
-{% endfor %}
-{% if not emitidas %}<tr><td colspan="5">Nenhum XML encontrado neste mês.</td></tr>{% endif %}
-</table></div>
-    <div id="tab-recebidas" class="tab-pane"><table>
-<tr><th>Data</th><th>Número NF</th><th>Chave</th><th>Valor</th><th>Arquivo</th></tr>
-{% for x in recebidas %}
-<tr>
-<td>{{x.criado_em}}</td>
-<td>{{x.numero_nf or '-'}}</td>
-<td>{{x.chave or '-'}}</td>
-<td>{% if x.valor_nf %}R$ {{x.valor_nf}}{% else %}-{% endif %}</td>
-<td><a class="btn btn-light" href="{{ url_for('baixar_xml_cliente', id=cliente.id, arquivo=x.arquivo) }}">Baixar XML</a></td>
-</tr>
-{% endfor %}
-{% if not recebidas %}<tr><td colspan="5">Nenhum XML encontrado neste mês.</td></tr>{% endif %}
-</table></div>
+    <div id="tab-emitidas" class="xml-tab-pane active">
+        <table>
+            <tr><th>Data</th><th>Número NF</th><th>Chave</th><th>Valor</th><th>Arquivo</th></tr>
+            {% for x in emitidas %}
+            <tr>
+                <td>{{ x.criado_em }}</td>
+                <td>{{ x.numero_nf or '-' }}</td>
+                <td>{{ x.chave or '-' }}</td>
+                <td>{% if x.valor_nf %}R$ {{ x.valor_nf }}{% else %}-{% endif %}</td>
+                <td><a class="btn btn-light" href="{{ url_for('baixar_xml_cliente', id=cliente.id, arquivo=x.arquivo) }}">Baixar XML</a></td>
+            </tr>
+            {% endfor %}
+            {% if not emitidas %}
+            <tr><td colspan="5">Nenhuma NF emitida encontrada neste mês.</td></tr>
+            {% endif %}
+        </table>
+    </div>
 
-    <script>
-      function abrirTabXml(nome){
-        document.querySelectorAll('.tab-pane').forEach(e=>e.classList.remove('active'));
-        document.querySelectorAll('.tab-btn').forEach(e=>e.classList.remove('active'));
-        document.getElementById('tab-'+nome).classList.add('active');
-        event.target.classList.add('active');
-      }
-    </script>
+    <div id="tab-recebidas" class="xml-tab-pane">
+        <table>
+            <tr><th>Data</th><th>Número NF</th><th>Chave</th><th>Valor</th><th>Arquivo</th></tr>
+            {% for x in recebidas %}
+            <tr>
+                <td>{{ x.criado_em }}</td>
+                <td>{{ x.numero_nf or '-' }}</td>
+                <td>{{ x.chave or '-' }}</td>
+                <td>{% if x.valor_nf %}R$ {{ x.valor_nf }}{% else %}-{% endif %}</td>
+                <td><a class="btn btn-light" href="{{ url_for('baixar_xml_cliente', id=cliente.id, arquivo=x.arquivo) }}">Baixar XML</a></td>
+            </tr>
+            {% endfor %}
+            {% if not recebidas %}
+            <tr><td colspan="5">Nenhuma NF recebida encontrada neste mês.</td></tr>
+            {% endif %}
+        </table>
+    </div>
 </div>
+
+<script>
+function abrirTabXml(event, nome){
+    document.querySelectorAll('.xml-tab-pane').forEach(e => e.classList.remove('active'));
+    document.querySelectorAll('.xml-tab-btn').forEach(e => e.classList.remove('active'));
+    document.getElementById('tab-' + nome).classList.add('active');
+    event.target.classList.add('active');
+}
+</script>
 {% endblock %}
