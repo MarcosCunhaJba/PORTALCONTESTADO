@@ -73,22 +73,13 @@ app = Flask(__name__)
 def inject_configuracoes_visuais():
     logo_topo = get_config("logo_topo", "")
     logo_login = get_config("logo_login", "")
-
     return {
         "LOGO_TOPO": logo_topo if logo_topo else "logo_ch_contestado.png",
         "LOGO_LOGIN": logo_login if logo_login else (logo_topo if logo_topo else "logo_ch_contestado.png"),
         "dias_sem_contato": dias_sem_contato
     }
 
-app.secret_key = os.environ.get("SECRET_KEY", "ch_contestado_secret_key")
 
-MESES = [
-    ("01", "Janeiro"), ("02", "Fevereiro"), ("03", "Março"),
-    ("04", "Abril"), ("05", "Maio"), ("06", "Junho"),
-    ("07", "Julho"), ("08", "Agosto"), ("09", "Setembro"),
-    ("10", "Outubro"), ("11", "Novembro"), ("12", "Dezembro"),
-]
-ANOS = list(range(2026, 2036))
 
 def db():
     con = sqlite3.connect(DB_PATH, timeout=30)
@@ -809,6 +800,9 @@ def interesses_ch():
 
 def gerar_zip_contabilidade(contabilidade_id, mes, ano):
     con = db()
+    mes = str(mes).zfill(2)
+    ano_int = int(ano)
+    ano_str = str(ano_int)
 
     cont = con.execute("""
         SELECT co.id, co.nome, co.email
@@ -829,37 +823,42 @@ def gerar_zip_contabilidade(contabilidade_id, mes, ano):
           AND d.mes = ?
           AND d.ano = ?
         ORDER BY c.razao ASC, d.id ASC
-    """, (contabilidade_id, mes, ano)).fetchall()
+    """, (contabilidade_id, mes, ano_int)).fetchall()
 
-    xmls = []
-    try:
-        filtro_sql = filtro_xml_mes_sql()
-        xmls = con.execute(f"""
-            SELECT
-                x.id AS xml_id,
-                x.cliente_id AS cliente_id,
-                x.arquivo AS arquivo,
-                x.tipo_doc AS tipo_doc,
-                x.direcao AS direcao,
-                x.numero_nf AS numero_nf,
-                x.chave AS chave,
-                c.razao AS razao
-            FROM xmls_dfe x
-            JOIN clientes c ON c.id = x.cliente_id
-            WHERE c.contabilidade_id = ?
-              AND {filtro_sql}
-            ORDER BY c.razao ASC, x.direcao ASC, x.tipo_doc ASC, x.numero_nf ASC, x.id ASC
-        """, (contabilidade_id, mes, ano, mes, str(ano), f"%/{mes}/{ano}%")).fetchall()
-    except Exception as e:
-        print("Erro ao buscar XMLs para ZIP da contabilidade:", str(e))
-        xmls = []
+    xmls = con.execute("""
+        SELECT
+            x.id AS xml_id,
+            x.cliente_id AS cliente_id,
+            x.arquivo AS arquivo,
+            x.tipo_doc AS tipo_doc,
+            x.direcao AS direcao,
+            x.numero_nf AS numero_nf,
+            x.chave AS chave,
+            x.mes_ref AS mes_ref,
+            x.ano_ref AS ano_ref,
+            c.razao AS razao
+        FROM xmls_dfe x
+        JOIN clientes c ON c.id = x.cliente_id
+        WHERE c.contabilidade_id = ?
+          AND (
+                (x.mes_ref = ? AND x.ano_ref = ?)
+                OR (
+                    (x.mes_ref IS NULL OR x.mes_ref='')
+                    AND x.chave IS NOT NULL
+                    AND length(x.chave) >= 6
+                    AND substr(x.chave, 5, 2)=?
+                    AND ('20' || substr(x.chave, 3, 2))=?
+                )
+          )
+        ORDER BY c.razao ASC, x.direcao ASC, x.tipo_doc ASC, x.numero_nf ASC, x.id ASC
+    """, (contabilidade_id, mes, ano_int, mes, ano_str)).fetchall()
 
     if not cont or (not docs and not xmls):
         con.close()
         return None, cont, 0
 
     token = uuid.uuid4().hex
-    nome_zip = f"contabilidade_{contabilidade_id}_{ano}_{mes}_{token[:8]}.zip"
+    nome_zip = f"contabilidade_{contabilidade_id}_{ano_int}_{mes}_{token[:8]}.zip"
     zip_path = os.path.join(ZIP_DIR, nome_zip)
     os.makedirs(ZIP_DIR, exist_ok=True)
 
@@ -885,18 +884,12 @@ def gerar_zip_contabilidade(contabilidade_id, mes, ano):
         )
         VALUES (?, ?, ?, ?, ?, ?, 0, ?)
     """, (
-        contabilidade_id,
-        mes,
-        ano,
-        nome_zip,
-        token,
-        cont["email"],
+        contabilidade_id, mes, ano_int, nome_zip, token, cont["email"],
         datetime.now().strftime("%d/%m/%Y %H:%M")
     ))
 
     con.commit()
     con.close()
-
     return token, cont, len(docs) + len(xmls)
 
 
@@ -1762,9 +1755,9 @@ def api_coletor_xml():
     if not arquivo or not arquivo.filename:
         return jsonify({"ok": False, "erro": "Arquivo XML não enviado."}), 400
 
+    con = None
     try:
         xml_conteudo = arquivo.read()
-
         chave, numero_nf, valor_nf, emit_cnpj, dest_cnpj, mes_ref, ano_ref, tipo_doc, direcao, eh_documento_fiscal = extrair_dados_nfe(xml_conteudo, cnpj_informado)
 
         if not eh_documento_fiscal:
@@ -1777,12 +1770,10 @@ def api_coletor_xml():
             cnpjs_possiveis.append(emit_cnpj)
         if dest_cnpj:
             cnpjs_possiveis.append(dest_cnpj)
-
         cnpjs_possiveis = list(dict.fromkeys([c for c in cnpjs_possiveis if c]))
 
         con = db()
         cliente = None
-
         for cnpj_busca in cnpjs_possiveis:
             cliente = con.execute("""
                 SELECT * FROM clientes
@@ -1806,23 +1797,30 @@ def api_coletor_xml():
         elif not direcao:
             direcao = "RECEBIDA"
 
+        # Atualiza comunicação do coletor SEMPRE que encontrou o cliente, mesmo XML duplicado.
+        con.execute("""
+            UPDATE clientes
+            SET coletor_ultimo_contato=?, coletor_ultimo_status=?
+            WHERE id=?
+        """, (datetime.now().strftime("%d/%m/%Y %H:%M"), "COMUNICOU", cliente["id"]))
+
         if chave:
             existente = con.execute(
                 "SELECT id FROM xmls_dfe WHERE cliente_id=? AND chave=?",
                 (cliente["id"], chave)
             ).fetchone()
             if existente:
-                con.execute("""
-                    UPDATE clientes
-                    SET coletor_ultimo_contato=?, coletor_ultimo_status=?
-                    WHERE id=?
-                """, (datetime.now().strftime("%d/%m/%Y %H:%M"), "DUPLICADO", cliente["id"]))
                 con.commit()
                 con.close()
                 return jsonify({
                     "ok": True,
                     "status": "duplicado",
                     "mensagem": "XML já existia.",
+                    "cliente_id": cliente["id"],
+                    "cliente": cliente["razao"],
+                    "direcao": direcao,
+                    "tipo_doc": tipo_doc,
+                    "numero_nf": numero_nf,
                     "chave": chave
                 })
 
@@ -1849,28 +1847,17 @@ def api_coletor_xml():
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            cliente["id"],
-            nsu,
-            "coletor_xml",
-            chave,
-            nome_salvo,
+            cliente["id"], nsu, "coletor_xml", chave, nome_salvo,
             datetime.now().strftime("%d/%m/%Y %H:%M"),
-            numero_nf,
-            valor_nf,
-            mes_ref,
-            ano_ref,
-            tipo_doc,
-            emit_cnpj,
-            dest_cnpj,
-            direcao,
-            tipo_doc
+            numero_nf, valor_nf, mes_ref, ano_ref, tipo_doc,
+            emit_cnpj, dest_cnpj, direcao, tipo_doc
         ))
 
         con.execute("""
             UPDATE clientes
             SET coletor_ultimo_contato=?, coletor_ultimo_status=?
             WHERE id=?
-        """, (datetime.now().strftime("%d/%m/%Y %H:%M"), "OK", cliente["id"]))
+        """, (datetime.now().strftime("%d/%m/%Y %H:%M"), "SALVO", cliente["id"]))
 
         con.commit()
         con.close()
@@ -1887,10 +1874,12 @@ def api_coletor_xml():
         })
 
     except Exception as e:
+        try:
+            if con:
+                con.close()
+        except Exception:
+            pass
         return jsonify({"ok": False, "erro": str(e)}), 500
-
-
-
 
 @app.route("/admin/coletor-status")
 @login_required("admin")
@@ -1910,7 +1899,7 @@ def coletor_status():
 @login_required("admin")
 def configurar_aparencia():
     if request.method == "POST":
-        os.makedirs(os.path.join("static", "uploads"), exist_ok=True)
+        os.makedirs(os.path.join(app.root_path, "static", "uploads"), exist_ok=True)
 
         logo_topo = request.files.get("logo_topo")
         logo_login = request.files.get("logo_login")
@@ -1922,7 +1911,7 @@ def configurar_aparencia():
                 return redirect(url_for("configurar_aparencia"))
 
             nome = f"uploads/logo_topo_{uuid.uuid4().hex}{ext}"
-            caminho = os.path.join("static", nome)
+            caminho = os.path.join(app.root_path, "static", nome)
             logo_topo.save(caminho)
             set_config("logo_topo", nome)
 
@@ -1933,7 +1922,7 @@ def configurar_aparencia():
                 return redirect(url_for("configurar_aparencia"))
 
             nome = f"uploads/logo_login_{uuid.uuid4().hex}{ext}"
-            caminho = os.path.join("static", nome)
+            caminho = os.path.join(app.root_path, "static", nome)
             logo_login.save(caminho)
             set_config("logo_login", nome)
 
