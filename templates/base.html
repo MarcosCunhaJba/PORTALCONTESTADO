@@ -10,8 +10,7 @@
 <body>
 <div class="app">
     <aside class="sidebar">
-        <div class="brand">
-            <div class="logo-text">CH<br><span>Contestado</span></div>
+        <div class="brand"><img src="{{ url_for('static', filename=LOGO_TOPO) }}" alt="Logo"></div>
         </div>
         {% if user %}
         <nav class="nav">
