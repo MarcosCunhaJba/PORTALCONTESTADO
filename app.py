@@ -944,22 +944,34 @@ def extrair_dados_nfe(xml_conteudo, cnpj_cliente):
         xml_doc = ET.fromstring(xml_conteudo)
         root_name = local(xml_doc.tag)
 
-        nomes_evento = {"procEventoNFe", "resEvento", "evento", "retEvento", "procEventoCTe", "procEventoMDFe"}
+        nomes_evento = {
+            "procEventoNFe", "resEvento", "evento", "retEvento",
+            "procEventoCTe", "procEventoMDFe"
+        }
         if root_name in nomes_evento or "Evento" in root_name:
             return chave, numero, valor, emit_cnpj, dest_cnpj, mes_ref, ano_ref, tipo_doc, direcao, False
 
-        if root_name in {"nfeProc", "NFe", "resNFe", "cteProc", "CTe", "resCTe", "mdfeProc", "MDFe", "resMDFe"}:
+        # Aceita XML completo de documento fiscal.
+        if root_name in {"nfeProc", "NFe", "resNFe", "cteProc", "CTe", "resCTe", "mdfeProc", "MDFe", "resMDFe", "procNFe"}:
             eh_documento_fiscal = True
 
         for el in xml_doc.iter():
             nome = local(el.tag)
-            if nome in ("chNFe", "chCTe", "chMDFe") and el.text and not chave:
-                chave = el.text.strip()
+            texto = (el.text or "").strip()
+
+            if nome in ("chNFe", "chCTe", "chMDFe") and texto and not chave:
+                chave = texto
                 eh_documento_fiscal = True
-            elif nome == "nNF" and el.text and not numero:
-                numero = el.text.strip().lstrip("0") or "0"
-            elif nome == "vNF" and el.text and not valor:
-                valor = el.text.strip()
+            elif nome == "infNFe" and not chave:
+                # Em procNFe/NFe completo às vezes a chave vem no atributo Id="NFe..."
+                id_attr = el.attrib.get("Id", "") or el.attrib.get("id", "")
+                if id_attr.startswith("NFe"):
+                    chave = id_attr[3:]
+                    eh_documento_fiscal = True
+            elif nome == "nNF" and texto and not numero:
+                numero = texto.lstrip("0") or "0"
+            elif nome == "vNF" and texto and not valor:
+                valor = texto
 
         for emit in xml_doc.iter():
             if local(emit.tag) == "emit":
@@ -989,9 +1001,20 @@ def extrair_dados_nfe(xml_conteudo, cnpj_cliente):
             modelo = chave[20:22]
             mes_ref = mm
             ano_ref = int("20" + aa) if aa.isdigit() else None
-            if not numero:
+
+            if not numero and len(chave) >= 34:
                 numero = chave[25:34].lstrip("0") or "0"
-            tipo_doc = {"55": "NFE", "65": "NFCE", "57": "CTE", "58": "MDFE"}.get(modelo, "OUTROS")
+
+            if modelo == "55":
+                tipo_doc = "NFE"
+            elif modelo == "65":
+                tipo_doc = "NFCE"
+            elif modelo == "57":
+                tipo_doc = "CTE"
+            elif modelo == "58":
+                tipo_doc = "MDFE"
+            else:
+                tipo_doc = "OUTROS"
 
         if emit_cnpj == cnpj_cliente:
             direcao = "EMITIDA"
@@ -1001,6 +1024,9 @@ def extrair_dados_nfe(xml_conteudo, cnpj_cliente):
             direcao = "RECEBIDA"
 
         return chave, numero, valor, emit_cnpj, dest_cnpj, mes_ref, ano_ref, tipo_doc, direcao, eh_documento_fiscal
+
+    except Exception:
+        return chave, numero, valor, emit_cnpj, dest_cnpj, mes_ref, ano_ref, tipo_doc, direcao, False
 
     except Exception:
         return chave, numero, valor, emit_cnpj, dest_cnpj, mes_ref, ano_ref, tipo_doc, direcao, False
@@ -1681,6 +1707,7 @@ def formatar_tamanho(bytes_total):
 # API DO COLETOR DE XML LOCAL
 # =========================================================
 
+
 @app.route("/api/coletor/xml", methods=["POST"])
 def api_coletor_xml():
     token_config = os.environ.get("COLETOR_API_TOKEN", "").strip()
@@ -1688,7 +1715,6 @@ def api_coletor_xml():
 
     if not token_config:
         return jsonify({"ok": False, "erro": "COLETOR_API_TOKEN não configurado no Railway."}), 500
-
     if token_recebido != token_config:
         return jsonify({"ok": False, "erro": "Token inválido."}), 401
 
@@ -1698,27 +1724,22 @@ def api_coletor_xml():
     if not arquivo or not arquivo.filename:
         return jsonify({"ok": False, "erro": "Arquivo XML não enviado."}), 400
 
+    con = None
     try:
         xml_conteudo = arquivo.read()
-
         chave, numero_nf, valor_nf, emit_cnpj, dest_cnpj, mes_ref, ano_ref, tipo_doc, direcao, eh_documento_fiscal = extrair_dados_nfe(xml_conteudo, cnpj_informado)
 
         if not eh_documento_fiscal:
             return jsonify({"ok": False, "erro": "Arquivo ignorado: não é XML de documento fiscal."}), 400
 
         cnpjs_possiveis = []
-        if cnpj_informado:
-            cnpjs_possiveis.append(cnpj_informado)
-        if emit_cnpj:
-            cnpjs_possiveis.append(emit_cnpj)
-        if dest_cnpj:
-            cnpjs_possiveis.append(dest_cnpj)
-
-        cnpjs_possiveis = list(dict.fromkeys([c for c in cnpjs_possiveis if c]))
+        for c in [cnpj_informado, emit_cnpj, dest_cnpj]:
+            if c:
+                cnpjs_possiveis.append(c)
+        cnpjs_possiveis = list(dict.fromkeys(cnpjs_possiveis))
 
         con = db()
         cliente = None
-
         for cnpj_busca in cnpjs_possiveis:
             cliente = con.execute("""
                 SELECT * FROM clientes
@@ -1734,7 +1755,6 @@ def api_coletor_xml():
             return jsonify({"ok": False, "erro": "Cliente não encontrado para o CNPJ do XML."}), 404
 
         cnpj_cliente = somente_digitos(cliente["cnpj"])
-
         if emit_cnpj == cnpj_cliente:
             direcao = "EMITIDA"
         elif dest_cnpj == cnpj_cliente:
@@ -1743,18 +1763,10 @@ def api_coletor_xml():
             direcao = "RECEBIDA"
 
         if chave:
-            existente = con.execute(
-                "SELECT id FROM xmls_dfe WHERE cliente_id=? AND chave=?",
-                (cliente["id"], chave)
-            ).fetchone()
+            existente = con.execute("SELECT id FROM xmls_dfe WHERE cliente_id=? AND chave=?", (cliente["id"], chave)).fetchone()
             if existente:
                 con.close()
-                return jsonify({
-                    "ok": True,
-                    "status": "duplicado",
-                    "mensagem": "XML já existia.",
-                    "chave": chave
-                })
+                return jsonify({"ok": True, "status": "duplicado", "cliente": cliente["razao"], "direcao": direcao, "chave": chave})
 
         pasta_cliente = os.path.join(XML_DIR, str(cliente["id"]))
         os.makedirs(pasta_cliente, exist_ok=True)
@@ -1762,14 +1774,10 @@ def api_coletor_xml():
         nome_original = secure_filename(arquivo.filename)
         if not nome_original.lower().endswith(".xml"):
             nome_original += ".xml"
-
         nome_salvo = f"{uuid.uuid4().hex}_{nome_original}"
-        caminho_xml = os.path.join(pasta_cliente, nome_salvo)
 
-        with open(caminho_xml, "wb") as f:
+        with open(os.path.join(pasta_cliente, nome_salvo), "wb") as f:
             f.write(xml_conteudo)
-
-        nsu = f"COLETOR_{uuid.uuid4().hex[:12]}"
 
         con.execute("""
             INSERT INTO xmls_dfe (
@@ -1779,38 +1787,23 @@ def api_coletor_xml():
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            cliente["id"],
-            nsu,
-            "coletor_xml",
-            chave,
-            nome_salvo,
-            datetime.now().strftime("%d/%m/%Y %H:%M"),
-            numero_nf,
-            valor_nf,
-            mes_ref,
-            ano_ref,
-            tipo_doc,
-            emit_cnpj,
-            dest_cnpj,
-            direcao,
-            tipo_doc
+            cliente["id"], f"COLETOR_{uuid.uuid4().hex[:12]}", "coletor_xml",
+            chave, nome_salvo, datetime.now().strftime("%d/%m/%Y %H:%M"),
+            numero_nf, valor_nf, mes_ref, ano_ref, tipo_doc,
+            emit_cnpj, dest_cnpj, direcao, tipo_doc
         ))
 
         con.commit()
         con.close()
 
-        return jsonify({
-            "ok": True,
-            "status": "salvo",
-            "cliente_id": cliente["id"],
-            "cliente": cliente["razao"],
-            "direcao": direcao,
-            "tipo_doc": tipo_doc,
-            "numero_nf": numero_nf,
-            "chave": chave
-        })
+        return jsonify({"ok": True, "status": "salvo", "cliente": cliente["razao"], "direcao": direcao, "tipo_doc": tipo_doc, "numero_nf": numero_nf, "chave": chave})
 
     except Exception as e:
+        try:
+            if con:
+                con.close()
+        except Exception:
+            pass
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 
