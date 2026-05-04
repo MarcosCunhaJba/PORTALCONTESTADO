@@ -928,7 +928,10 @@ def extrair_dados_nfe(xml_conteudo, cnpj_cliente):
     def local(tag):
         return tag.split("}", 1)[-1] if "}" in tag else tag
 
-    cnpj_cliente = somente_digitos(cnpj_cliente)
+    def so_num(v):
+        return somente_digitos(v or "")
+
+    cnpj_cliente = so_num(cnpj_cliente)
     chave = ""
     numero = ""
     valor = ""
@@ -944,7 +947,6 @@ def extrair_dados_nfe(xml_conteudo, cnpj_cliente):
         xml_doc = ET.fromstring(xml_conteudo)
         root_name = local(xml_doc.tag)
 
-        # Ignora eventos/cancelamentos, mas aceita procNFe/nfeProc de NFe e NFCe.
         nomes_evento = {
             "procEventoNFe", "resEvento", "evento", "retEvento",
             "procEventoCTe", "procEventoMDFe", "procCanNFe", "retCancNFe"
@@ -952,13 +954,24 @@ def extrair_dados_nfe(xml_conteudo, cnpj_cliente):
         if root_name in nomes_evento or "Evento" in root_name or "Can" in root_name:
             return chave, numero, valor, emit_cnpj, dest_cnpj, mes_ref, ano_ref, tipo_doc, direcao, False
 
+        # NFE/NFCE/CTE/MDFE
         if root_name in {"nfeProc", "NFe", "procNFe", "resNFe", "cteProc", "CTe", "resCTe", "mdfeProc", "MDFe", "resMDFe"}:
             eh_documento_fiscal = True
+
+        # NFS-e: nomes comuns nos layouts ABRASF / municipais
+        nomes_nfse = {
+            "CompNfse", "Nfse", "InfNfse", "ConsultarNfseResposta",
+            "ListaNfse", "GerarNfseResposta", "EnviarLoteRpsResposta"
+        }
+        if root_name in nomes_nfse or "Nfse" in root_name or "NFSe" in root_name:
+            eh_documento_fiscal = True
+            tipo_doc = "NFSE"
 
         for el in xml_doc.iter():
             nome = local(el.tag)
             texto = (el.text or "").strip()
 
+            # chave NF-e/NFC-e
             if nome in ("chNFe", "chCTe", "chMDFe") and texto and not chave:
                 chave = texto
                 eh_documento_fiscal = True
@@ -969,37 +982,72 @@ def extrair_dados_nfe(xml_conteudo, cnpj_cliente):
                     chave = id_attr[3:]
                     eh_documento_fiscal = True
 
-            elif nome == "nNF" and texto and not numero:
+            # número NFE/NFCE/CTE/NFSE
+            elif nome in ("nNF", "Numero", "NumeroNfse", "NumeroNota", "NumeroNFS-e") and texto and not numero:
                 numero = texto.lstrip("0") or "0"
 
-            elif nome == "vNF" and texto and not valor:
-                valor = texto
+            # valor NFE/NFCE/NFSE
+            elif nome in ("vNF", "ValorServicos", "ValorServico", "ValorLiquidoNfse", "ValorTotalServicos") and texto and not valor:
+                valor = texto.replace(",", ".")
 
+            # competência/data NFSE
+            elif nome in ("DataEmissao", "Competencia", "DataEmissaoNfse") and texto and not mes_ref:
+                # formatos comuns: 2026-04-15, 2026-04-15T10:00:00
+                if len(texto) >= 7 and texto[:4].isdigit():
+                    ano_ref = int(texto[:4])
+                    mes_ref = texto[5:7]
+
+            # código/verificação de NFSE como chave fallback
+            elif nome in ("CodigoVerificacao", "CodigoVerificacaoNfse") and texto and not chave:
+                chave = texto
+
+        # CNPJ emitente/destinatário para NFE/NFCE
         for emit in xml_doc.iter():
-            if local(emit.tag) == "emit":
-                for filho in emit:
-                    if local(filho.tag) == "CNPJ" and filho.text:
-                        emit_cnpj = somente_digitos(filho.text)
-                        break
-                break
+            if local(emit.tag) in ("emit", "PrestadorServico", "Prestador"):
+                for filho in emit.iter():
+                    if local(filho.tag) in ("CNPJ", "CpfCnpj"):
+                        txt = "".join((filho.text or "").split())
+                        if txt:
+                            emit_cnpj = so_num(txt)
+                            break
+                if emit_cnpj:
+                    break
 
         for dest in xml_doc.iter():
-            if local(dest.tag) == "dest":
-                for filho in dest:
-                    if local(filho.tag) == "CNPJ" and filho.text:
-                        dest_cnpj = somente_digitos(filho.text)
-                        break
-                break
+            if local(dest.tag) in ("dest", "TomadorServico", "Tomador"):
+                for filho in dest.iter():
+                    if local(filho.tag) in ("CNPJ", "CpfCnpj"):
+                        txt = "".join((filho.text or "").split())
+                        if txt:
+                            dest_cnpj = so_num(txt)
+                            break
+                if dest_cnpj:
+                    break
 
-        if not emit_cnpj and root_name in {"resNFe", "resCTe", "resMDFe"}:
+        # layouts NFSE às vezes usam Cnpj dentro de CpfCnpj
+        if not emit_cnpj:
             for el in xml_doc.iter():
-                if local(el.tag) == "CNPJ" and el.text:
-                    emit_cnpj = somente_digitos(el.text)
+                nome = local(el.tag)
+                if nome in ("PrestadorServico", "Prestador"):
+                    for sub in el.iter():
+                        if local(sub.tag).lower() == "cnpj" and sub.text:
+                            emit_cnpj = so_num(sub.text)
+                            break
+                    break
+
+        if not dest_cnpj:
+            for el in xml_doc.iter():
+                nome = local(el.tag)
+                if nome in ("TomadorServico", "Tomador"):
+                    for sub in el.iter():
+                        if local(sub.tag).lower() == "cnpj" and sub.text:
+                            dest_cnpj = so_num(sub.text)
+                            break
                     break
 
         # Chave NF-e/NFC-e:
         # UF(2) + AAMM(4) + CNPJ(14) + modelo(2) + série(3) + número(9)...
-        if chave and len(chave) >= 34:
+        if chave and len(chave) >= 34 and chave[:2].isdigit():
             aa = chave[2:4]
             mm = chave[4:6]
             modelo = chave[20:22]
@@ -1017,8 +1065,17 @@ def extrair_dados_nfe(xml_conteudo, cnpj_cliente):
                 tipo_doc = "CTE"
             elif modelo == "58":
                 tipo_doc = "MDFE"
-            else:
-                tipo_doc = "OUTROS"
+
+        # Se é NFSE sem chave, cria chave técnica para evitar duplicidade.
+        if tipo_doc == "NFSE":
+            if not chave:
+                chave = f"NFSE-{emit_cnpj}-{dest_cnpj}-{ano_ref or ''}{mes_ref or ''}-{numero or ''}-{valor or ''}"
+            eh_documento_fiscal = True
+
+        # Fallback NFSe: NFS-e não possui modelo 55/65 na chave.
+        if tipo_doc == "OUTROS" and "nfse" in root_name.lower():
+            tipo_doc = "NFSE"
+            eh_documento_fiscal = True
 
         if emit_cnpj == cnpj_cliente:
             direcao = "EMITIDA"
@@ -1028,6 +1085,9 @@ def extrair_dados_nfe(xml_conteudo, cnpj_cliente):
             direcao = "RECEBIDA"
 
         return chave, numero, valor, emit_cnpj, dest_cnpj, mes_ref, ano_ref, tipo_doc, direcao, eh_documento_fiscal
+
+    except Exception:
+        return chave, numero, valor, emit_cnpj, dest_cnpj, mes_ref, ano_ref, tipo_doc, direcao, False
 
     except Exception:
         return chave, numero, valor, emit_cnpj, dest_cnpj, mes_ref, ano_ref, tipo_doc, direcao, False
