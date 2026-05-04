@@ -2,11 +2,9 @@
 {% block title %}Status dos Coletores{% endblock %}
 {% block page_title %}Status dos Coletores{% endblock %}
 {% block content %}
-
 <div class="card">
     <h2>Monitoramento dos coletores</h2>
-    <p style="color:#64748b;">Filtre por nome fantasia, razão social ou CNPJ para localizar o cliente.</p>
-
+    <p style="color:#64748b;">Filtre por fantasia, razão social ou CNPJ.</p>
     <form method="get" class="filters" style="margin-top:14px;">
         <div class="field" style="min-width:320px;">
             <label>Buscar cliente/CNPJ</label>
@@ -38,13 +36,7 @@
                 </td>
                 <td>{{ c.cnpj }}</td>
                 <td>{{ c.coletor_ultimo_contato or 'Nunca comunicou' }}</td>
-                <td>
-                    {% if dias is none %}
-                        -
-                    {% else %}
-                        {{ dias }} dia(s)
-                    {% endif %}
-                </td>
+                <td>{% if dias is none %}-{% else %}{{ dias }} dia(s){% endif %}</td>
                 <td>
                     {% if dias is none %}
                         <span class="status-pend">Sem comunicação</span>
@@ -55,9 +47,7 @@
                     {% endif %}
                     {% if c.coletor_ultimo_status %}<br><small>{{ c.coletor_ultimo_status }}</small>{% endif %}
                 </td>
-                <td>
-                    <a class="btn btn-light" href="{{ url_for('baixar_coletor_cliente', id=c.id) }}">Baixar coletor</a>
-                </td>
+                <td><a class="btn btn-light" href="{{ url_for('baixar_coletor_cliente', id=c.id) }}">Baixar coletor</a></td>
             </tr>
         {% endfor %}
         {% if not clientes %}
@@ -65,5 +55,4 @@
         {% endif %}
     </table>
 </div>
-
 {% endblock %}

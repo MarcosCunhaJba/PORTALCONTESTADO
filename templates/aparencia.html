@@ -2,10 +2,9 @@
 {% block title %}Aparência{% endblock %}
 {% block page_title %}Aparência do Portal{% endblock %}
 {% block content %}
-
 <div class="card">
     <h2>Logos do sistema</h2>
-    <p style="color:#64748b;">Envie as logos em PNG, JPG ou WEBP. A logo do topo aparece no menu lateral. A logo do login aparece na tela inicial.</p>
+    <p style="color:#64748b;">Envie a logo do menu e a logo da tela de login. Use PNG, JPG ou WEBP.</p>
 </div>
 
 <div class="card">
@@ -14,7 +13,7 @@
             <label>Logo do topo/menu</label>
             <input type="file" name="logo_topo" accept=".png,.jpg,.jpeg,.webp">
             <div style="margin-top:12px;">
-                <img src="{{ url_for('static', filename=LOGO_TOPO) }}" style="max-width:260px;background:white;border:1px solid #e5e7eb;border-radius:14px;padding:10px;">
+                <img src="{{ url_for('static', filename=LOGO_TOPO) }}" style="max-width:260px;max-height:140px;object-fit:contain;background:white;border:1px solid #e5e7eb;border-radius:14px;padding:10px;">
             </div>
         </div>
 
@@ -22,7 +21,7 @@
             <label>Logo do login</label>
             <input type="file" name="logo_login" accept=".png,.jpg,.jpeg,.webp">
             <div style="margin-top:12px;">
-                <img src="{{ url_for('static', filename=LOGO_LOGIN) }}" style="max-width:260px;background:white;border:1px solid #e5e7eb;border-radius:14px;padding:10px;">
+                <img src="{{ url_for('static', filename=LOGO_LOGIN) }}" style="max-width:260px;max-height:140px;object-fit:contain;background:white;border:1px solid #e5e7eb;border-radius:14px;padding:10px;">
             </div>
         </div>
 
@@ -31,5 +30,4 @@
         </div>
     </form>
 </div>
-
 {% endblock %}
