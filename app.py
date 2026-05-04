@@ -944,15 +944,15 @@ def extrair_dados_nfe(xml_conteudo, cnpj_cliente):
         xml_doc = ET.fromstring(xml_conteudo)
         root_name = local(xml_doc.tag)
 
+        # Ignora eventos/cancelamentos, mas aceita procNFe/nfeProc de NFe e NFCe.
         nomes_evento = {
             "procEventoNFe", "resEvento", "evento", "retEvento",
-            "procEventoCTe", "procEventoMDFe"
+            "procEventoCTe", "procEventoMDFe", "procCanNFe", "retCancNFe"
         }
-        if root_name in nomes_evento or "Evento" in root_name:
+        if root_name in nomes_evento or "Evento" in root_name or "Can" in root_name:
             return chave, numero, valor, emit_cnpj, dest_cnpj, mes_ref, ano_ref, tipo_doc, direcao, False
 
-        # Aceita XML completo de documento fiscal.
-        if root_name in {"nfeProc", "NFe", "resNFe", "cteProc", "CTe", "resCTe", "mdfeProc", "MDFe", "resMDFe", "procNFe"}:
+        if root_name in {"nfeProc", "NFe", "procNFe", "resNFe", "cteProc", "CTe", "resCTe", "mdfeProc", "MDFe", "resMDFe"}:
             eh_documento_fiscal = True
 
         for el in xml_doc.iter():
@@ -962,14 +962,16 @@ def extrair_dados_nfe(xml_conteudo, cnpj_cliente):
             if nome in ("chNFe", "chCTe", "chMDFe") and texto and not chave:
                 chave = texto
                 eh_documento_fiscal = True
+
             elif nome == "infNFe" and not chave:
-                # Em procNFe/NFe completo às vezes a chave vem no atributo Id="NFe..."
                 id_attr = el.attrib.get("Id", "") or el.attrib.get("id", "")
                 if id_attr.startswith("NFe"):
                     chave = id_attr[3:]
                     eh_documento_fiscal = True
+
             elif nome == "nNF" and texto and not numero:
                 numero = texto.lstrip("0") or "0"
+
             elif nome == "vNF" and texto and not valor:
                 valor = texto
 
@@ -995,6 +997,8 @@ def extrair_dados_nfe(xml_conteudo, cnpj_cliente):
                     emit_cnpj = somente_digitos(el.text)
                     break
 
+        # Chave NF-e/NFC-e:
+        # UF(2) + AAMM(4) + CNPJ(14) + modelo(2) + série(3) + número(9)...
         if chave and len(chave) >= 34:
             aa = chave[2:4]
             mm = chave[4:6]
@@ -1002,7 +1006,7 @@ def extrair_dados_nfe(xml_conteudo, cnpj_cliente):
             mes_ref = mm
             ano_ref = int("20" + aa) if aa.isdigit() else None
 
-            if not numero and len(chave) >= 34:
+            if not numero:
                 numero = chave[25:34].lstrip("0") or "0"
 
             if modelo == "55":
@@ -1024,6 +1028,9 @@ def extrair_dados_nfe(xml_conteudo, cnpj_cliente):
             direcao = "RECEBIDA"
 
         return chave, numero, valor, emit_cnpj, dest_cnpj, mes_ref, ano_ref, tipo_doc, direcao, eh_documento_fiscal
+
+    except Exception:
+        return chave, numero, valor, emit_cnpj, dest_cnpj, mes_ref, ano_ref, tipo_doc, direcao, False
 
     except Exception:
         return chave, numero, valor, emit_cnpj, dest_cnpj, mes_ref, ano_ref, tipo_doc, direcao, False

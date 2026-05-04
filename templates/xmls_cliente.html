@@ -171,10 +171,11 @@
 
     <div id="tab-emitidas" class="xml-tab-pane active">
         <table>
-            <tr><th>Data</th><th>Número NF</th><th>Chave</th><th>Valor</th><th>Arquivo</th></tr>
+            <tr><th>Data</th><th>Tipo</th><th>Número NF</th><th>Chave</th><th>Valor</th><th>Arquivo</th></tr>
             {% for x in emitidas %}
             <tr>
                 <td>{{ x.criado_em }}</td>
+                <td>{{ x.tipo_doc or '-' }}</td>
                 <td>{{ x.numero_nf or '-' }}</td>
                 <td>{{ x.chave or '-' }}</td>
                 <td>{% if x.valor_nf %}R$ {{ x.valor_nf }}{% else %}-{% endif %}</td>
@@ -182,17 +183,18 @@
             </tr>
             {% endfor %}
             {% if not emitidas %}
-            <tr><td colspan="5">Nenhuma NF emitida encontrada neste mês.</td></tr>
+            <tr><td colspan="6">Nenhuma NF emitida encontrada neste mês.</td></tr>
             {% endif %}
         </table>
     </div>
 
     <div id="tab-recebidas" class="xml-tab-pane">
         <table>
-            <tr><th>Data</th><th>Número NF</th><th>Chave</th><th>Valor</th><th>Arquivo</th></tr>
+            <tr><th>Data</th><th>Tipo</th><th>Número NF</th><th>Chave</th><th>Valor</th><th>Arquivo</th></tr>
             {% for x in recebidas %}
             <tr>
                 <td>{{ x.criado_em }}</td>
+                <td>{{ x.tipo_doc or '-' }}</td>
                 <td>{{ x.numero_nf or '-' }}</td>
                 <td>{{ x.chave or '-' }}</td>
                 <td>{% if x.valor_nf %}R$ {{ x.valor_nf }}{% else %}-{% endif %}</td>
@@ -200,7 +202,7 @@
             </tr>
             {% endfor %}
             {% if not recebidas %}
-            <tr><td colspan="5">Nenhuma NF recebida encontrada neste mês.</td></tr>
+            <tr><td colspan="6">Nenhuma NF recebida encontrada neste mês.</td></tr>
             {% endif %}
         </table>
     </div>
