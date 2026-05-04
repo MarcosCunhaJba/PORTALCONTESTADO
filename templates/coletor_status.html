@@ -2,17 +2,10 @@
 {% block title %}Status dos Coletores{% endblock %}
 {% block page_title %}Status dos Coletores{% endblock %}
 {% block content %}
+
 <div class="card">
     <h2>Monitoramento dos coletores</h2>
-    <p style="color:#64748b;">Filtre por fantasia, razão social ou CNPJ.</p>
-    <form method="get" class="filters" style="margin-top:14px;">
-        <div class="field" style="min-width:320px;">
-            <label>Buscar cliente/CNPJ</label>
-            <input name="busca" value="{{ busca or '' }}" placeholder="Digite fantasia, razão ou CNPJ">
-        </div>
-        <button class="btn">Filtrar</button>
-        <a class="btn btn-light" href="{{ url_for('coletor_status') }}">Limpar</a>
-    </form>
+    <p style="color:#64748b;">Clientes sem comunicação por muitos dias devem ser conferidos com o cliente.</p>
 </div>
 
 <div class="card">
@@ -28,15 +21,16 @@
         {% for c in clientes %}
             {% set dias = dias_sem_contato(c.coletor_ultimo_contato) %}
             <tr>
-                <td>
-                    <b>{{ c.fantasia or c.razao }}</b>
-                    {% if c.fantasia and c.razao %}
-                        <br><small style="color:#64748b;">{{ c.razao }}</small>
-                    {% endif %}
-                </td>
+                <td>{{ c.razao }}</td>
                 <td>{{ c.cnpj }}</td>
                 <td>{{ c.coletor_ultimo_contato or 'Nunca comunicou' }}</td>
-                <td>{% if dias is none %}-{% else %}{{ dias }} dia(s){% endif %}</td>
+                <td>
+                    {% if dias is none %}
+                        -
+                    {% else %}
+                        {{ dias }} dia(s)
+                    {% endif %}
+                </td>
                 <td>
                     {% if dias is none %}
                         <span class="status-pend">Sem comunicação</span>
@@ -47,12 +41,12 @@
                     {% endif %}
                     {% if c.coletor_ultimo_status %}<br><small>{{ c.coletor_ultimo_status }}</small>{% endif %}
                 </td>
-                <td><a class="btn btn-light" href="{{ url_for('baixar_coletor_cliente', id=c.id) }}">Baixar coletor</a></td>
+                <td>
+                    <a class="btn btn-light" href="{{ url_for('baixar_coletor_cliente', id=c.id) }}">Baixar coletor</a>
+                </td>
             </tr>
         {% endfor %}
-        {% if not clientes %}
-            <tr><td colspan="6">Nenhum cliente encontrado.</td></tr>
-        {% endif %}
     </table>
 </div>
+
 {% endblock %}

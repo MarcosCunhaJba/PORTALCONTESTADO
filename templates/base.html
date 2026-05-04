@@ -1,68 +1,48 @@
+
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>{% block title %}Portal CH Contestado{% endblock %}</title>
+    <title>{% block title %}CH Contestado{% endblock %}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <style>
-        .layout{display:flex;min-height:100vh;background:#f4f7fb}
-        .sidebar{width:270px;background:linear-gradient(180deg,#0B2F5B,#0057B8);color:#fff;display:flex;flex-direction:column;padding:22px 16px;gap:14px}
-        .brand{background:rgba(255,255,255,.08);border-radius:18px;padding:12px;text-align:center;min-height:78px;display:flex;align-items:center;justify-content:center}
-        .brand img{max-width:210px;max-height:82px;width:auto;height:auto;object-fit:contain;background:transparent}
-        .nav{display:flex;flex-direction:column;gap:7px;margin-top:8px}
-        .nav a{color:#fff;text-decoration:none;padding:11px 12px;border-radius:12px;font-weight:800;display:block}
-        .nav a:hover{background:rgba(255,255,255,.14)}
-        .sidebar-footer{margin-top:auto;background:rgba(255,255,255,.10);border-radius:16px;padding:13px;font-size:13px;font-weight:900;color:#FFE08A}
-        .main{flex:1;padding:28px;overflow:auto}
-        .top-title{margin-bottom:22px}
-        .top-title h1{margin:0;color:#0B2F5B;font-size:32px}
-        .top-title p{color:#64748b;margin:6px 0 0}
-        .flash{background:#fff7d6;border:1px solid #facc15;color:#713f12;padding:12px 14px;border-radius:12px;margin-bottom:14px;font-weight:700}
-    </style>
 </head>
 <body>
-<div class="layout">
+<div class="app">
     <aside class="sidebar">
         <div class="brand">
-            <img src="{{ url_for('static', filename=LOGO_TOPO) }}" alt="Logo">
+            <div class="logo-text">CH<br><span>Contestado</span></div>
         </div>
-
-        {% if session.get('user_id') %}
+        {% if user %}
         <nav class="nav">
-            {% if session.get('tipo') == 'admin' %}
-                <a href="{{ url_for('admin') }}">Dashboard</a>
+            {% if user.tipo == 'admin' %}
+                <a href="{{ url_for('dashboard_admin') }}">Dashboard</a>
                 <a href="{{ url_for('clientes') }}">Clientes</a>
                 <a href="{{ url_for('contabilidades') }}">Contabilidades</a>
-                <a href="{{ url_for('envios') }}">Envios</a>
+                <a href="{{ url_for('historico_envios') }}">Histórico de Envios</a>
                 <a href="{{ url_for('interesses_ch') }}">Interesses CH</a>
-                <a href="{{ url_for('coletor_status') }}">Status Coletores</a>
-                <a href="{{ url_for('configurar_aparencia') }}">Aparência</a>
-                {% if 'painel_storage' in globals() %}
-                <a href="{{ url_for('painel_storage') }}">Storage</a>
-                {% endif %}
-                {% if 'backup_completo' in globals() %}
                 <a href="{{ url_for('backup_completo') }}">Backup Completo</a>
-                {% endif %}
-            {% elif session.get('tipo') == 'contabilidade' %}
-                <a href="{{ url_for('area_contabilidade') }}">Meus Documentos</a>
+                <a href="{{ url_for('painel_storage') }}">Storage</a>
+                <a href="{{ url_for('configurar_aparencia') }}">Aparência</a>
+                <a href="{{ url_for('coletor_status') }}">Status Coletores</a>
+            {% else %}
+                <a href="{{ url_for('area_contabilidade') }}">Área Contabilidade</a>
             {% endif %}
             <a href="{{ url_for('logout') }}">Sair</a>
         </nav>
         {% endif %}
-
-        <div class="sidebar-footer">
-            SOFTWARE DE GESTÃO<br>
-            49 9 9176-2559
+        <div class="side-footer">
+            <strong>SOFTWARE DE GESTÃO</strong>
+            <span>49 9 9176-2559</span>
         </div>
     </aside>
-
     <main class="main">
-        <div class="top-title">
-            <h1>{% block page_title %}{% endblock %}</h1>
-            <p>Gestão de documentos contábeis</p>
+        <div class="topbar">
+            <div>
+                <h1>{% block page_title %}{% endblock %}</h1>
+                <p>Gestão de documentos contábeis</p>
+            </div>
         </div>
-
         {% with messages = get_flashed_messages() %}
             {% if messages %}
                 {% for m in messages %}
@@ -70,9 +50,34 @@
                 {% endfor %}
             {% endif %}
         {% endwith %}
-
         {% block content %}{% endblock %}
     </main>
 </div>
+{% if session.get('tipo') == 'contabilidade' %}
+<div id="popup-ch" class="popup-mini" style="display:none;">
+    <div class="popup-mini-header"><span>🚀 Parceria CH</span><button type="button" onclick="fecharPopupMini()" class="popup-mini-close">×</button></div>
+    <div class="popup-mini-content">
+        <strong>Quer aumentar seu faturamento?</strong>
+        <p>Indique a <b>CH Contestado</b> e entregue mais valor aos seus clientes.</p>
+        <a href="https://wa.me/554991762559?text=Olá, vi a oportunidade de parceria no sistema CH Contestado" target="_blank" onclick="registrarInteresseCH()" class="popup-mini-btn">📲 Quero ser parceiro</a>
+    </div>
+</div>
+<script>
+function mostrarPopupMini(){
+    if(window.location.pathname === "/"){ return; }
+    let hoje = new Date().toDateString();
+    let ultimo = localStorage.getItem("popup_ch_mini");
+    if(ultimo !== hoje && document.getElementById("popup-ch")){
+        document.getElementById("popup-ch").style.display = "block";
+    }
+}
+function fecharPopupMini(){
+    if(document.getElementById("popup-ch")){ document.getElementById("popup-ch").style.display = "none"; }
+    localStorage.setItem("popup_ch_mini", new Date().toDateString());
+}
+function registrarInteresseCH(){ fetch("{{ url_for('registrar_interesse_ch') }}").catch(function(){}); }
+setTimeout(mostrarPopupMini, 2000);
+</script>
+{% endif %}
 </body>
 </html>

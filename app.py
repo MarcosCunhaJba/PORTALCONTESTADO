@@ -24,6 +24,16 @@ def set_config(chave, valor):
     con.close()
 
 
+@app.context_processor
+def inject_configuracoes_visuais():
+    logo_topo = get_config("logo_topo", "")
+    logo_login = get_config("logo_login", "")
+
+    return {
+        "LOGO_TOPO": logo_topo if logo_topo else "logo_ch_contestado.png",
+        "LOGO_LOGIN": logo_login if logo_login else (logo_topo if logo_topo else "logo_ch_contestado.png")
+    }
+
 
 def dias_sem_contato(data_txt):
     if not data_txt:
@@ -67,6 +77,8 @@ XML_DIR = os.path.join(UPLOAD_DIR, "xmls")
 for pasta in (DATA_DIR, UPLOAD_DIR, DOC_DIR, CERT_DIR, ZIP_DIR, XML_DIR):
     os.makedirs(pasta, exist_ok=True)
 
+app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "ch_contestado_secret_key")
 
 MESES = [
     ("01", "Janeiro"), ("02", "Fevereiro"), ("03", "Março"),
@@ -74,50 +86,7 @@ MESES = [
     ("07", "Julho"), ("08", "Agosto"), ("09", "Setembro"),
     ("10", "Outubro"), ("11", "Novembro"), ("12", "Dezembro"),
 ]
-ANOS = list(range(datetime.now().year - 5, datetime.now().year + 2))
-
-
-MESES_FIXO = [
-    ("01", "Janeiro"), ("02", "Fevereiro"), ("03", "Março"),
-    ("04", "Abril"), ("05", "Maio"), ("06", "Junho"),
-    ("07", "Julho"), ("08", "Agosto"), ("09", "Setembro"),
-    ("10", "Outubro"), ("11", "Novembro"), ("12", "Dezembro"),
-]
-
-def get_meses():
-    return MESES_FIXO
-
-def get_anos():
-    ano_atual = datetime.now().year
-    return list(range(ano_atual - 5, ano_atual + 2))
-
-def nome_mes(mes):
-    mes = str(mes).zfill(2)
-    for k, v in MESES_FIXO:
-        if k == mes:
-            return v
-    return mes
-
-MESES = MESES_FIXO
-ANOS = get_anos()
-
-app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "ch-contestado-chave-segura-2026-trocar-no-railway")
-
-@app.context_processor
-def inject_configuracoes_visuais():
-    logo_topo = get_config("logo_topo", "")
-    logo_login = get_config("logo_login", "")
-    return {
-        "LOGO_TOPO": logo_topo if logo_topo else "logo_ch_contestado.png",
-        "LOGO_LOGIN": logo_login if logo_login else (logo_topo if logo_topo else "logo_ch_contestado.png"),
-        "dias_sem_contato": dias_sem_contato,
-        "MESES": get_meses(),
-        "ANOS": get_anos(),
-        "nome_mes": nome_mes
-    }
-
-
+ANOS = list(range(2026, 2036))
 
 def db():
     con = sqlite3.connect(DB_PATH, timeout=30)
@@ -337,7 +306,7 @@ def current_user():
 
 @app.context_processor
 def inject_global():
-    return {"MESES": get_meses(), "ANOS": get_anos(), "nome_mes": nome_mes, "user": current_user()}
+    return {"MESES": MESES, "ANOS": ANOS, "nome_mes": nome_mes, "user": current_user()}
 
 def login_required(tipo=None):
     def decorator(fn):
@@ -605,7 +574,7 @@ def clientes():
     itens = con.execute(sql, params).fetchall()
     contabs = con.execute("SELECT * FROM contabilidades WHERE COALESCE(ativo,1)=1 ORDER BY nome").fetchall()
     con.close()
-    return render_template("clientes.html", itens=itens, contabs=contabs, anos=get_anos(), filtro=filtro, cnpj=cnpj_busca)
+    return render_template("clientes.html", itens=itens, contabs=contabs, anos=ANOS, filtro=filtro, cnpj=cnpj_busca)
 
 @app.route("/clientes/editar/<int:id>", methods=["GET", "POST"])
 @login_required("admin")
@@ -795,7 +764,7 @@ def area_contabilidade():
         params.append(f"%{cnpj}%")
     rows = con.execute(query + " ORDER BY c.razao", params).fetchall()
     con.close()
-    return render_template("contabilidade_area.html", rows=rows, meses=get_meses(), anos=get_anos(), mes=mes, ano=ano, cnpj=cnpj)
+    return render_template("contabilidade_area.html", rows=rows, meses=MESES, anos=ANOS, mes=mes, ano=ano, cnpj=cnpj)
 
 @app.route("/registrar-interesse-ch")
 @login_required("contabilidade")
@@ -838,9 +807,6 @@ def interesses_ch():
 
 def gerar_zip_contabilidade(contabilidade_id, mes, ano):
     con = db()
-    mes = str(mes).zfill(2)
-    ano_int = int(ano)
-    ano_str = str(ano_int)
 
     cont = con.execute("""
         SELECT co.id, co.nome, co.email
@@ -849,40 +815,49 @@ def gerar_zip_contabilidade(contabilidade_id, mes, ano):
     """, (contabilidade_id,)).fetchone()
 
     docs = con.execute("""
-        SELECT d.id AS documento_id, d.cliente_id AS cliente_id, d.nome_original AS nome_original,
-               d.arquivo AS arquivo, c.razao AS razao
+        SELECT 
+            d.id AS documento_id,
+            d.cliente_id AS cliente_id,
+            d.nome_original AS nome_original,
+            d.arquivo AS arquivo,
+            c.razao AS razao
         FROM documentos d
         JOIN clientes c ON c.id = d.cliente_id
-        WHERE c.contabilidade_id = ? AND d.mes = ? AND d.ano = ?
-        ORDER BY c.razao ASC, d.id ASC
-    """, (contabilidade_id, mes, ano_int)).fetchall()
-
-    xmls = con.execute("""
-        SELECT x.id AS xml_id, x.cliente_id AS cliente_id, x.arquivo AS arquivo,
-               x.tipo_doc AS tipo_doc, x.direcao AS direcao, x.numero_nf AS numero_nf,
-               x.chave AS chave, c.razao AS razao
-        FROM xmls_dfe x
-        JOIN clientes c ON c.id = x.cliente_id
         WHERE c.contabilidade_id = ?
-          AND (
-                (x.mes_ref = ? AND x.ano_ref = ?)
-                OR (
-                    (x.mes_ref IS NULL OR x.mes_ref='')
-                    AND x.chave IS NOT NULL
-                    AND length(x.chave) >= 6
-                    AND substr(x.chave, 5, 2)=?
-                    AND ('20' || substr(x.chave, 3, 2))=?
-                )
-          )
-        ORDER BY c.razao ASC, x.direcao ASC, x.tipo_doc ASC, x.numero_nf ASC, x.id ASC
-    """, (contabilidade_id, mes, ano_int, mes, ano_str)).fetchall()
+          AND d.mes = ?
+          AND d.ano = ?
+        ORDER BY c.razao ASC, d.id ASC
+    """, (contabilidade_id, mes, ano)).fetchall()
+
+    xmls = []
+    try:
+        filtro_sql = filtro_xml_mes_sql()
+        xmls = con.execute(f"""
+            SELECT
+                x.id AS xml_id,
+                x.cliente_id AS cliente_id,
+                x.arquivo AS arquivo,
+                x.tipo_doc AS tipo_doc,
+                x.direcao AS direcao,
+                x.numero_nf AS numero_nf,
+                x.chave AS chave,
+                c.razao AS razao
+            FROM xmls_dfe x
+            JOIN clientes c ON c.id = x.cliente_id
+            WHERE c.contabilidade_id = ?
+              AND {filtro_sql}
+            ORDER BY c.razao ASC, x.direcao ASC, x.tipo_doc ASC, x.numero_nf ASC, x.id ASC
+        """, (contabilidade_id, mes, ano, mes, str(ano), f"%/{mes}/{ano}%")).fetchall()
+    except Exception as e:
+        print("Erro ao buscar XMLs para ZIP:", str(e))
+        xmls = []
 
     if not cont or (not docs and not xmls):
         con.close()
         return None, cont, 0
 
     token = uuid.uuid4().hex
-    nome_zip = f"contabilidade_{contabilidade_id}_{ano_int}_{mes}_{token[:8]}.zip"
+    nome_zip = f"contabilidade_{contabilidade_id}_{ano}_{mes}_{token[:8]}.zip"
     zip_path = os.path.join(ZIP_DIR, nome_zip)
     os.makedirs(ZIP_DIR, exist_ok=True)
 
@@ -903,12 +878,15 @@ def gerar_zip_contabilidade(contabilidade_id, mes, ano):
                 z.write(origem_xml, f"XMLS/{pasta_cliente_xml}/{direcao}/{tipo}/{x['arquivo']}")
 
     con.execute("""
-        INSERT INTO envios (contabilidade_id, mes, ano, arquivo_zip, token, email_destino, enviado_email, criado_em)
+        INSERT INTO envios (
+            contabilidade_id, mes, ano, arquivo_zip, token, email_destino, enviado_email, criado_em
+        )
         VALUES (?, ?, ?, ?, ?, ?, 0, ?)
-    """, (contabilidade_id, mes, ano_int, nome_zip, token, cont["email"], datetime.now().strftime("%d/%m/%Y %H:%M")))
+    """, (contabilidade_id, mes, ano, nome_zip, token, cont["email"], datetime.now().strftime("%d/%m/%Y %H:%M")))
 
     con.commit()
     con.close()
+
     return token, cont, len(docs) + len(xmls)
 
 
@@ -1764,6 +1742,7 @@ def api_coletor_xml():
 
     if not token_config:
         return jsonify({"ok": False, "erro": "COLETOR_API_TOKEN não configurado no Railway."}), 500
+
     if token_recebido != token_config:
         return jsonify({"ok": False, "erro": "Token inválido."}), 401
 
@@ -1773,22 +1752,27 @@ def api_coletor_xml():
     if not arquivo or not arquivo.filename:
         return jsonify({"ok": False, "erro": "Arquivo XML não enviado."}), 400
 
-    con = None
     try:
         xml_conteudo = arquivo.read()
+
         chave, numero_nf, valor_nf, emit_cnpj, dest_cnpj, mes_ref, ano_ref, tipo_doc, direcao, eh_documento_fiscal = extrair_dados_nfe(xml_conteudo, cnpj_informado)
 
         if not eh_documento_fiscal:
             return jsonify({"ok": False, "erro": "Arquivo ignorado: não é XML de documento fiscal."}), 400
 
         cnpjs_possiveis = []
-        for c in [cnpj_informado, emit_cnpj, dest_cnpj]:
-            if c:
-                cnpjs_possiveis.append(c)
-        cnpjs_possiveis = list(dict.fromkeys(cnpjs_possiveis))
+        if cnpj_informado:
+            cnpjs_possiveis.append(cnpj_informado)
+        if emit_cnpj:
+            cnpjs_possiveis.append(emit_cnpj)
+        if dest_cnpj:
+            cnpjs_possiveis.append(dest_cnpj)
+
+        cnpjs_possiveis = list(dict.fromkeys([c for c in cnpjs_possiveis if c]))
 
         con = db()
         cliente = None
+
         for cnpj_busca in cnpjs_possiveis:
             cliente = con.execute("""
                 SELECT * FROM clientes
@@ -1804,6 +1788,7 @@ def api_coletor_xml():
             return jsonify({"ok": False, "erro": "Cliente não encontrado para o CNPJ do XML."}), 404
 
         cnpj_cliente = somente_digitos(cliente["cnpj"])
+
         if emit_cnpj == cnpj_cliente:
             direcao = "EMITIDA"
         elif dest_cnpj == cnpj_cliente:
@@ -1811,18 +1796,25 @@ def api_coletor_xml():
         elif not direcao:
             direcao = "RECEBIDA"
 
-        con.execute("""
-            UPDATE clientes
-            SET coletor_ultimo_contato=?, coletor_ultimo_status=?
-            WHERE id=?
-        """, (datetime.now().strftime("%d/%m/%Y %H:%M"), "COMUNICOU", cliente["id"]))
-
         if chave:
-            existente = con.execute("SELECT id FROM xmls_dfe WHERE cliente_id=? AND chave=?", (cliente["id"], chave)).fetchone()
+            existente = con.execute(
+                "SELECT id FROM xmls_dfe WHERE cliente_id=? AND chave=?",
+                (cliente["id"], chave)
+            ).fetchone()
             if existente:
+                con.execute("""
+                    UPDATE clientes
+                    SET coletor_ultimo_contato=?, coletor_ultimo_status=?
+                    WHERE id=?
+                """, (datetime.now().strftime("%d/%m/%Y %H:%M"), "DUPLICADO", cliente["id"]))
                 con.commit()
                 con.close()
-                return jsonify({"ok": True, "status": "duplicado", "cliente_id": cliente["id"], "cliente": cliente["razao"], "direcao": direcao, "tipo_doc": tipo_doc, "numero_nf": numero_nf, "chave": chave})
+                return jsonify({
+                    "ok": True,
+                    "status": "duplicado",
+                    "mensagem": "XML já existia.",
+                    "chave": chave
+                })
 
         pasta_cliente = os.path.join(XML_DIR, str(cliente["id"]))
         os.makedirs(pasta_cliente, exist_ok=True)
@@ -1832,8 +1824,12 @@ def api_coletor_xml():
             nome_original += ".xml"
 
         nome_salvo = f"{uuid.uuid4().hex}_{nome_original}"
-        with open(os.path.join(pasta_cliente, nome_salvo), "wb") as f:
+        caminho_xml = os.path.join(pasta_cliente, nome_salvo)
+
+        with open(caminho_xml, "wb") as f:
             f.write(xml_conteudo)
+
+        nsu = f"COLETOR_{uuid.uuid4().hex[:12]}"
 
         con.execute("""
             INSERT INTO xmls_dfe (
@@ -1843,87 +1839,99 @@ def api_coletor_xml():
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            cliente["id"], f"COLETOR_{uuid.uuid4().hex[:12]}", "coletor_xml", chave, nome_salvo,
-            datetime.now().strftime("%d/%m/%Y %H:%M"), numero_nf, valor_nf, mes_ref, ano_ref,
-            tipo_doc, emit_cnpj, dest_cnpj, direcao, tipo_doc
+            cliente["id"],
+            nsu,
+            "coletor_xml",
+            chave,
+            nome_salvo,
+            datetime.now().strftime("%d/%m/%Y %H:%M"),
+            numero_nf,
+            valor_nf,
+            mes_ref,
+            ano_ref,
+            tipo_doc,
+            emit_cnpj,
+            dest_cnpj,
+            direcao,
+            tipo_doc
         ))
 
         con.execute("""
             UPDATE clientes
             SET coletor_ultimo_contato=?, coletor_ultimo_status=?
             WHERE id=?
-        """, (datetime.now().strftime("%d/%m/%Y %H:%M"), "SALVO", cliente["id"]))
+        """, (datetime.now().strftime("%d/%m/%Y %H:%M"), "OK", cliente["id"]))
 
         con.commit()
         con.close()
 
-        return jsonify({"ok": True, "status": "salvo", "cliente_id": cliente["id"], "cliente": cliente["razao"], "direcao": direcao, "tipo_doc": tipo_doc, "numero_nf": numero_nf, "chave": chave})
+        return jsonify({
+            "ok": True,
+            "status": "salvo",
+            "cliente_id": cliente["id"],
+            "cliente": cliente["razao"],
+            "direcao": direcao,
+            "tipo_doc": tipo_doc,
+            "numero_nf": numero_nf,
+            "chave": chave
+        })
 
     except Exception as e:
-        try:
-            if con:
-                con.close()
-        except Exception:
-            pass
         return jsonify({"ok": False, "erro": str(e)}), 500
+
+
 
 
 @app.route("/admin/coletor-status")
 @login_required("admin")
 def coletor_status():
-    busca = request.args.get("busca", "").strip()
-
     con = db()
-    sql = """
-        SELECT id, razao, fantasia, cnpj, coletor_ultimo_contato, coletor_ultimo_status
+    clientes = con.execute("""
+        SELECT id, razao, cnpj, coletor_ultimo_contato, coletor_ultimo_status
         FROM clientes
         WHERE COALESCE(ativo,1)=1
-    """
-    params = []
-
-    if busca:
-        termo = f"%{busca}%"
-        termo_cnpj = f"%{somente_digitos(busca)}%"
-        sql += """
-            AND (
-                razao LIKE ?
-                OR COALESCE(fantasia,'') LIKE ?
-                OR cnpj LIKE ?
-                OR REPLACE(REPLACE(REPLACE(cnpj,'.',''),'/',''),'-','') LIKE ?
-            )
-        """
-        params.extend([termo, termo, termo, termo_cnpj])
-
-    sql += " ORDER BY razao"
-    clientes = con.execute(sql, params).fetchall()
+        ORDER BY razao
+    """).fetchall()
     con.close()
+    return render_template("coletor_status.html", clientes=clientes)
 
-    return render_template("coletor_status.html", clientes=clientes, busca=busca)
 
 @app.route("/admin/aparencia", methods=["GET", "POST"])
 @login_required("admin")
 def configurar_aparencia():
     if request.method == "POST":
-        upload_dir = os.path.join(app.root_path, "static", "uploads")
-        os.makedirs(upload_dir, exist_ok=True)
+        os.makedirs(os.path.join("static", "uploads"), exist_ok=True)
 
-        for campo, chave in [("logo_topo", "logo_topo"), ("logo_login", "logo_login")]:
-            arquivo = request.files.get(campo)
-            if arquivo and arquivo.filename:
-                ext = os.path.splitext(arquivo.filename)[1].lower()
-                if ext not in [".png", ".jpg", ".jpeg", ".webp"]:
-                    flash("Envie apenas PNG, JPG, JPEG ou WEBP.")
-                    return redirect(url_for("configurar_aparencia"))
+        logo_topo = request.files.get("logo_topo")
+        logo_login = request.files.get("logo_login")
 
-                nome = f"uploads/{chave}_{uuid.uuid4().hex}{ext}"
-                caminho = os.path.join(app.root_path, "static", nome)
-                arquivo.save(caminho)
-                set_config(chave, nome)
+        if logo_topo and logo_topo.filename:
+            ext = os.path.splitext(logo_topo.filename)[1].lower()
+            if ext not in [".png", ".jpg", ".jpeg", ".webp"]:
+                flash("Logo do topo precisa ser PNG, JPG ou WEBP.")
+                return redirect(url_for("configurar_aparencia"))
 
-        flash("Logos atualizadas com sucesso.")
+            nome = f"uploads/logo_topo_{uuid.uuid4().hex}{ext}"
+            caminho = os.path.join("static", nome)
+            logo_topo.save(caminho)
+            set_config("logo_topo", nome)
+
+        if logo_login and logo_login.filename:
+            ext = os.path.splitext(logo_login.filename)[1].lower()
+            if ext not in [".png", ".jpg", ".jpeg", ".webp"]:
+                flash("Logo do login precisa ser PNG, JPG ou WEBP.")
+                return redirect(url_for("configurar_aparencia"))
+
+            nome = f"uploads/logo_login_{uuid.uuid4().hex}{ext}"
+            caminho = os.path.join("static", nome)
+            logo_login.save(caminho)
+            set_config("logo_login", nome)
+
+        flash("Aparência atualizada com sucesso.")
         return redirect(url_for("configurar_aparencia"))
 
     return render_template("aparencia.html")
+
 
 @app.route("/admin/storage")
 @login_required("admin")
