@@ -67,6 +67,40 @@ XML_DIR = os.path.join(UPLOAD_DIR, "xmls")
 for pasta in (DATA_DIR, UPLOAD_DIR, DOC_DIR, CERT_DIR, ZIP_DIR, XML_DIR):
     os.makedirs(pasta, exist_ok=True)
 
+
+MESES = [
+    ("01", "Janeiro"), ("02", "Fevereiro"), ("03", "Março"),
+    ("04", "Abril"), ("05", "Maio"), ("06", "Junho"),
+    ("07", "Julho"), ("08", "Agosto"), ("09", "Setembro"),
+    ("10", "Outubro"), ("11", "Novembro"), ("12", "Dezembro"),
+]
+ANOS = list(range(datetime.now().year - 5, datetime.now().year + 2))
+
+
+MESES_FIXO = [
+    ("01", "Janeiro"), ("02", "Fevereiro"), ("03", "Março"),
+    ("04", "Abril"), ("05", "Maio"), ("06", "Junho"),
+    ("07", "Julho"), ("08", "Agosto"), ("09", "Setembro"),
+    ("10", "Outubro"), ("11", "Novembro"), ("12", "Dezembro"),
+]
+
+def get_meses():
+    return MESES_FIXO
+
+def get_anos():
+    ano_atual = datetime.now().year
+    return list(range(ano_atual - 5, ano_atual + 2))
+
+def nome_mes(mes):
+    mes = str(mes).zfill(2)
+    for k, v in MESES_FIXO:
+        if k == mes:
+            return v
+    return mes
+
+MESES = MESES_FIXO
+ANOS = get_anos()
+
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "ch-contestado-chave-segura-2026-trocar-no-railway")
 
@@ -78,8 +112,8 @@ def inject_configuracoes_visuais():
         "LOGO_TOPO": logo_topo if logo_topo else "logo_ch_contestado.png",
         "LOGO_LOGIN": logo_login if logo_login else (logo_topo if logo_topo else "logo_ch_contestado.png"),
         "dias_sem_contato": dias_sem_contato,
-        "MESES": MESES,
-        "ANOS": ANOS,
+        "MESES": get_meses(),
+        "ANOS": get_anos(),
         "nome_mes": nome_mes
     }
 
@@ -303,7 +337,7 @@ def current_user():
 
 @app.context_processor
 def inject_global():
-    return {"MESES": MESES, "ANOS": ANOS, "nome_mes": nome_mes, "user": current_user()}
+    return {"MESES": get_meses(), "ANOS": get_anos(), "nome_mes": nome_mes, "user": current_user()}
 
 def login_required(tipo=None):
     def decorator(fn):
@@ -571,7 +605,7 @@ def clientes():
     itens = con.execute(sql, params).fetchall()
     contabs = con.execute("SELECT * FROM contabilidades WHERE COALESCE(ativo,1)=1 ORDER BY nome").fetchall()
     con.close()
-    return render_template("clientes.html", itens=itens, contabs=contabs, anos=ANOS, filtro=filtro, cnpj=cnpj_busca)
+    return render_template("clientes.html", itens=itens, contabs=contabs, anos=get_anos(), filtro=filtro, cnpj=cnpj_busca)
 
 @app.route("/clientes/editar/<int:id>", methods=["GET", "POST"])
 @login_required("admin")
@@ -761,7 +795,7 @@ def area_contabilidade():
         params.append(f"%{cnpj}%")
     rows = con.execute(query + " ORDER BY c.razao", params).fetchall()
     con.close()
-    return render_template("contabilidade_area.html", rows=rows, meses=MESES, anos=ANOS, mes=mes, ano=ano, cnpj=cnpj)
+    return render_template("contabilidade_area.html", rows=rows, meses=get_meses(), anos=get_anos(), mes=mes, ano=ano, cnpj=cnpj)
 
 @app.route("/registrar-interesse-ch")
 @login_required("contabilidade")
@@ -1832,6 +1866,7 @@ def api_coletor_xml():
         except Exception:
             pass
         return jsonify({"ok": False, "erro": str(e)}), 500
+
 
 @app.route("/admin/coletor-status")
 @login_required("admin")
