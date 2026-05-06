@@ -772,7 +772,9 @@ def certificado(arquivo):
 @app.route("/contabilidade/leads", methods=["GET", "POST"])
 @login_required("contabilidade")
 def leads_contabilidade_area():
-    contabilidade_id = session.get("contabilidade_id") or session.get("user_id")
+    # Compatível com as variações de sessão que o sistema já usou.
+    usuario_id = session.get("user_id")
+    contabilidade_id = session.get("contabilidade_id") or session.get("cont_id") or usuario_id
 
     con = db()
     con.execute("""CREATE TABLE IF NOT EXISTS leads_contabilidade (
@@ -785,6 +787,45 @@ def leads_contabilidade_area():
         status TEXT DEFAULT 'Novo',
         criado_em TEXT
     )""")
+
+    # Se user_id for id de usuário/login e não id da contabilidade,
+    # tenta localizar a contabilidade vinculada.
+    try:
+        usuario = None
+        try:
+            usuario = con.execute("SELECT * FROM usuarios WHERE id=?", (usuario_id,)).fetchone()
+        except Exception:
+            usuario = None
+
+        if usuario:
+            # 1) se existir coluna contabilidade_id no usuário
+            try:
+                if "contabilidade_id" in usuario.keys() and usuario["contabilidade_id"]:
+                    contabilidade_id = usuario["contabilidade_id"]
+            except Exception:
+                pass
+
+            # 2) se o login/email do usuário for o email da contabilidade
+            try:
+                email_usuario = usuario["email"] if "email" in usuario.keys() else ""
+                if email_usuario:
+                    c = con.execute("SELECT id FROM contabilidades WHERE email=? LIMIT 1", (email_usuario,)).fetchone()
+                    if c:
+                        contabilidade_id = c["id"]
+            except Exception:
+                pass
+
+        # 3) fallback: se existir contabilidade com id igual ao user_id, mantém
+        c = con.execute("SELECT id FROM contabilidades WHERE id=? LIMIT 1", (contabilidade_id,)).fetchone()
+        if not c:
+            # último fallback: tenta pelo e-mail guardado na sessão
+            email_sessao = session.get("email") or session.get("usuario_email") or ""
+            if email_sessao:
+                c = con.execute("SELECT id FROM contabilidades WHERE email=? LIMIT 1", (email_sessao,)).fetchone()
+                if c:
+                    contabilidade_id = c["id"]
+    except Exception:
+        pass
 
     if request.method == "POST":
         nome_cliente = request.form.get("nome_cliente", "").strip()
@@ -825,6 +866,7 @@ def leads_contabilidade_area():
 
     con.close()
     return render_template("leads_contabilidade_area.html", leads=leads)
+
 
 
 @app.route("/admin/leads", methods=["GET", "POST"])

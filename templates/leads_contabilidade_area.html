@@ -2,27 +2,65 @@
 {% block title %}Indicar Lead{% endblock %}
 {% block page_title %}Indicar Lead{% endblock %}
 {% block content %}
+
 <div class="card">
-    <h2>Indique um cliente para a CH Contestado</h2>
-    <p style="color:#64748b;">Cadastre uma empresa interessada para nosso time entrar em contato.</p>
+    <h2>Indicar cliente para a CH Contestado</h2>
+    <p style="color:#64748b;">Preencha os dados abaixo. A indicação aparecerá para o time da CH Contestado no painel administrativo.</p>
 </div>
+
 <div class="card">
     <form method="post" class="grid2">
-        <div class="field"><label>Nome do cliente / empresa *</label><input name="nome_cliente" required></div>
-        <div class="field"><label>CNPJ</label><input name="cnpj" placeholder="00.000.000/0000-00"></div>
-        <div class="field"><label>Telefone / WhatsApp *</label><input name="telefone" required></div>
-        <div class="field"><label>Observação</label><input name="observacao" placeholder="Ex: precisa de sistema, emissão fiscal..."></div>
-        <div><button class="btn">Enviar indicação</button></div>
+        <div class="field">
+            <label>Nome do cliente / empresa *</label>
+            <input name="nome_cliente" placeholder="Ex: Mercado São José" required>
+        </div>
+
+        <div class="field">
+            <label>CNPJ</label>
+            <input name="cnpj" placeholder="00.000.000/0000-00">
+        </div>
+
+        <div class="field">
+            <label>Telefone / WhatsApp *</label>
+            <input name="telefone" placeholder="(49) 99999-9999" required>
+        </div>
+
+        <div class="field">
+            <label>Observação</label>
+            <input name="observacao" placeholder="Ex: precisa de sistema, emissão fiscal, estoque...">
+        </div>
+
+        <div>
+            <button class="btn">Enviar indicação</button>
+        </div>
     </form>
 </div>
+
 <div class="card">
     <h3>Minhas indicações</h3>
     <table>
-        <tr><th>Data</th><th>Cliente</th><th>CNPJ</th><th>Telefone</th><th>Status</th><th>Observação</th></tr>
+        <tr>
+            <th>Data</th>
+            <th>Cliente</th>
+            <th>CNPJ</th>
+            <th>Telefone</th>
+            <th>Status</th>
+            <th>Observação</th>
+        </tr>
         {% for l in leads %}
-        <tr><td>{{ l.criado_em }}</td><td>{{ l.nome_cliente }}</td><td>{{ l.cnpj or '-' }}</td><td>{{ l.telefone }}</td><td>{{ l.status }}</td><td>{{ l.observacao or '-' }}</td></tr>
+        <tr>
+            <td>{{ l.criado_em }}</td>
+            <td>{{ l.nome_cliente }}</td>
+            <td>{{ l.cnpj or '-' }}</td>
+            <td>{{ l.telefone }}</td>
+            <td>{{ l.status }}</td>
+            <td>{{ l.observacao or '-' }}</td>
+        </tr>
         {% endfor %}
-        {% if not leads %}<tr><td colspan="6">Nenhuma indicação cadastrada ainda.</td></tr>{% endif %}
+        {% if not leads %}
+        <tr><td colspan="6">Nenhuma indicação cadastrada ainda.</td></tr>
+        {% endif %}
     </table>
 </div>
+
 {% endblock %}
