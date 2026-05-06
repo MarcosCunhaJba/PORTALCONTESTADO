@@ -497,9 +497,10 @@ def xml_controle():
     busca = request.args.get("busca", "").strip()
     status = request.args.get("status", "").strip()
     tipo = request.args.get("tipo", "").strip()
-    limite = int(request.args.get("limite", 300) or 300)
+    limite = int(request.args.get("limite", 500) or 500)
 
     con = db()
+
     con.execute("""
         CREATE TABLE IF NOT EXISTS xml_envios_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -516,10 +517,51 @@ def xml_controle():
         )
     """)
 
+    # Mostra:
+    # 1) registros novos gravados em xml_envios_log
+    # 2) XMLs que já estavam salvos em xmls_dfe antes da criação do controle
     sql = """
-        SELECT l.*, c.razao
-        FROM xml_envios_log l
-        LEFT JOIN clientes c ON c.id = l.cliente_id
+        SELECT *
+        FROM (
+            SELECT
+                l.id AS id,
+                l.criado_em AS criado_em,
+                COALESCE(l.status, 'SALVO') AS status,
+                COALESCE(c.razao, '') AS razao,
+                COALESCE(l.cnpj, c.cnpj, '') AS cnpj,
+                COALESCE(l.tipo_doc, '') AS tipo_doc,
+                COALESCE(l.direcao, '') AS direcao,
+                COALESCE(l.numero_nf, '') AS numero_nf,
+                COALESCE(l.chave, '') AS chave,
+                COALESCE(l.mensagem, '') AS mensagem,
+                COALESCE(l.arquivo, '') AS arquivo
+            FROM xml_envios_log l
+            LEFT JOIN clientes c ON c.id = l.cliente_id
+
+            UNION ALL
+
+            SELECT
+                100000000 + x.id AS id,
+                COALESCE(x.criado_em, '') AS criado_em,
+                'SALVO' AS status,
+                COALESCE(c.razao, '') AS razao,
+                COALESCE(c.cnpj, '') AS cnpj,
+                COALESCE(x.tipo_doc, x.modelo_doc, '') AS tipo_doc,
+                COALESCE(x.direcao, '') AS direcao,
+                COALESCE(x.numero_nf, '') AS numero_nf,
+                COALESCE(x.chave, '') AS chave,
+                'XML já salvo no banco' AS mensagem,
+                COALESCE(x.arquivo, '') AS arquivo
+            FROM xmls_dfe x
+            LEFT JOIN clientes c ON c.id = x.cliente_id
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM xml_envios_log l2
+                WHERE l2.chave = x.chave
+                  AND l2.chave IS NOT NULL
+                  AND l2.chave <> ''
+            )
+        )
         WHERE 1=1
     """
     params = []
@@ -529,28 +571,38 @@ def xml_controle():
         termo_cnpj = f"%{somente_digitos(busca)}%"
         sql += """
             AND (
-                COALESCE(c.razao,'') LIKE ?
-                OR COALESCE('') LIKE ?
-                OR COALESCE(l.cnpj,'') LIKE ?
-                OR COALESCE(l.chave,'') LIKE ?
-                OR COALESCE(l.arquivo,'') LIKE ?
+                COALESCE(razao,'') LIKE ?
+                OR COALESCE(cnpj,'') LIKE ?
+                OR REPLACE(REPLACE(REPLACE(COALESCE(cnpj,''),'.',''),'/',''),'-','') LIKE ?
+                OR COALESCE(chave,'') LIKE ?
+                OR COALESCE(arquivo,'') LIKE ?
             )
         """
-        params.extend([termo, termo_cnpj, termo, termo])
+        params.extend([termo, termo, termo_cnpj, termo, termo])
 
     if status:
-        sql += " AND l.status = ?"
+        sql += " AND status = ?"
         params.append(status)
 
     if tipo:
-        sql += " AND l.tipo_doc = ?"
+        sql += " AND tipo_doc = ?"
         params.append(tipo)
 
-    sql += " ORDER BY l.id DESC LIMIT ?"
+    sql += " ORDER BY id DESC LIMIT ?"
     params.append(limite)
 
     logs = con.execute(sql, params).fetchall()
-    resumo = con.execute("SELECT status, COUNT(*) total FROM xml_envios_log GROUP BY status").fetchall()
+
+    resumo = con.execute("""
+        SELECT status, COUNT(*) total
+        FROM (
+            SELECT COALESCE(status, 'SALVO') AS status FROM xml_envios_log
+            UNION ALL
+            SELECT 'SALVO' AS status FROM xmls_dfe
+        )
+        GROUP BY status
+    """).fetchall()
+
     con.close()
 
     return render_template("xml_controle.html", logs=logs, resumo=resumo, busca=busca, status=status, tipo=tipo, limite=limite)
