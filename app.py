@@ -517,7 +517,7 @@ def xml_controle():
     """)
 
     sql = """
-        SELECT l.*, c.razao, c.fantasia
+        SELECT l.*, c.razao
         FROM xml_envios_log l
         LEFT JOIN clientes c ON c.id = l.cliente_id
         WHERE 1=1
@@ -530,13 +530,13 @@ def xml_controle():
         sql += """
             AND (
                 COALESCE(c.razao,'') LIKE ?
-                OR COALESCE(c.fantasia,'') LIKE ?
+                OR COALESCE('') LIKE ?
                 OR COALESCE(l.cnpj,'') LIKE ?
                 OR COALESCE(l.chave,'') LIKE ?
                 OR COALESCE(l.arquivo,'') LIKE ?
             )
         """
-        params.extend([termo, termo, termo_cnpj, termo, termo])
+        params.extend([termo, termo_cnpj, termo, termo])
 
     if status:
         sql += " AND l.status = ?"
@@ -772,7 +772,8 @@ def certificado(arquivo):
 @app.route("/contabilidade/leads", methods=["GET", "POST"])
 @login_required("contabilidade")
 def leads_contabilidade_area():
-    contabilidade_id = session.get("user_id")
+    contabilidade_id = session.get("contabilidade_id") or session.get("user_id")
+
     con = db()
     con.execute("""CREATE TABLE IF NOT EXISTS leads_contabilidade (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -797,19 +798,31 @@ def leads_contabilidade_area():
             return redirect(url_for("leads_contabilidade_area"))
 
         con.execute("""
-            INSERT INTO leads_contabilidade (contabilidade_id, nome_cliente, cnpj, telefone, observacao, status, criado_em)
+            INSERT INTO leads_contabilidade (
+                contabilidade_id, nome_cliente, cnpj, telefone, observacao, status, criado_em
+            )
             VALUES (?, ?, ?, ?, ?, 'Novo', ?)
-        """, (contabilidade_id, nome_cliente, cnpj, telefone, observacao, datetime.now().strftime("%d/%m/%Y %H:%M")))
+        """, (
+            contabilidade_id,
+            nome_cliente,
+            cnpj,
+            telefone,
+            observacao,
+            datetime.now().strftime("%d/%m/%Y %H:%M")
+        ))
         con.commit()
         con.close()
+
         flash("Lead enviado com sucesso. Obrigado pela indicação!")
         return redirect(url_for("leads_contabilidade_area"))
 
     leads = con.execute("""
-        SELECT * FROM leads_contabilidade
+        SELECT *
+        FROM leads_contabilidade
         WHERE contabilidade_id=?
         ORDER BY id DESC
     """, (contabilidade_id,)).fetchall()
+
     con.close()
     return render_template("leads_contabilidade_area.html", leads=leads)
 
@@ -861,7 +874,7 @@ def leads_admin():
                 OR COALESCE(co.nome,'') LIKE ?
             )
         """
-        params.extend([termo, termo, termo_cnpj, termo, termo])
+        params.extend([termo, termo_cnpj, termo, termo])
 
     if status_filtro:
         sql += " AND l.status=?"
