@@ -148,6 +148,17 @@ def init_db():
     """)
     # Autorreparo completo para bancos antigos que já estavam no Railway
     # Isso evita erro 500 quando uma tabela antiga não tem alguma coluna nova.
+    cur.execute("""CREATE TABLE IF NOT EXISTS leads_contabilidade (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        contabilidade_id INTEGER,
+        nome_cliente TEXT,
+        cnpj TEXT,
+        telefone TEXT,
+        observacao TEXT,
+        status TEXT DEFAULT 'Novo',
+        criado_em TEXT
+    )""")
+
     ensure_column(cur, "users", "nome", "TEXT")
     ensure_column(cur, "users", "email", "TEXT")
     ensure_column(cur, "users", "senha_hash", "TEXT")
@@ -690,6 +701,112 @@ def download(arquivo):
 @login_required("admin")
 def certificado(arquivo):
     return send_from_directory(CERT_DIR, arquivo, as_attachment=True)
+
+
+@app.route("/contabilidade/leads", methods=["GET", "POST"])
+@login_required("contabilidade")
+def leads_contabilidade_area():
+    contabilidade_id = session.get("user_id")
+    con = db()
+    con.execute("""CREATE TABLE IF NOT EXISTS leads_contabilidade (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        contabilidade_id INTEGER,
+        nome_cliente TEXT,
+        cnpj TEXT,
+        telefone TEXT,
+        observacao TEXT,
+        status TEXT DEFAULT 'Novo',
+        criado_em TEXT
+    )""")
+
+    if request.method == "POST":
+        nome_cliente = request.form.get("nome_cliente", "").strip()
+        cnpj = request.form.get("cnpj", "").strip()
+        telefone = request.form.get("telefone", "").strip()
+        observacao = request.form.get("observacao", "").strip()
+
+        if not nome_cliente or not telefone:
+            flash("Informe pelo menos o nome do lead e o telefone.")
+            con.close()
+            return redirect(url_for("leads_contabilidade_area"))
+
+        con.execute("""
+            INSERT INTO leads_contabilidade (contabilidade_id, nome_cliente, cnpj, telefone, observacao, status, criado_em)
+            VALUES (?, ?, ?, ?, ?, 'Novo', ?)
+        """, (contabilidade_id, nome_cliente, cnpj, telefone, observacao, datetime.now().strftime("%d/%m/%Y %H:%M")))
+        con.commit()
+        con.close()
+        flash("Lead enviado com sucesso. Obrigado pela indicação!")
+        return redirect(url_for("leads_contabilidade_area"))
+
+    leads = con.execute("""
+        SELECT * FROM leads_contabilidade
+        WHERE contabilidade_id=?
+        ORDER BY id DESC
+    """, (contabilidade_id,)).fetchall()
+    con.close()
+    return render_template("leads_contabilidade_area.html", leads=leads)
+
+
+@app.route("/admin/leads", methods=["GET", "POST"])
+@login_required("admin")
+def leads_admin():
+    con = db()
+    con.execute("""CREATE TABLE IF NOT EXISTS leads_contabilidade (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        contabilidade_id INTEGER,
+        nome_cliente TEXT,
+        cnpj TEXT,
+        telefone TEXT,
+        observacao TEXT,
+        status TEXT DEFAULT 'Novo',
+        criado_em TEXT
+    )""")
+
+    if request.method == "POST":
+        lead_id = request.form.get("lead_id")
+        status = request.form.get("status", "Novo")
+        con.execute("UPDATE leads_contabilidade SET status=? WHERE id=?", (status, lead_id))
+        con.commit()
+        con.close()
+        flash("Status do lead atualizado.")
+        return redirect(url_for("leads_admin"))
+
+    busca = request.args.get("busca", "").strip()
+    status_filtro = request.args.get("status", "").strip()
+
+    sql = """
+        SELECT l.*, co.nome AS contabilidade_nome
+        FROM leads_contabilidade l
+        LEFT JOIN contabilidades co ON co.id = l.contabilidade_id
+        WHERE 1=1
+    """
+    params = []
+
+    if busca:
+        termo = f"%{busca}%"
+        termo_cnpj = f"%{somente_digitos(busca)}%"
+        sql += """
+            AND (
+                COALESCE(l.nome_cliente,'') LIKE ?
+                OR COALESCE(l.cnpj,'') LIKE ?
+                OR REPLACE(REPLACE(REPLACE(COALESCE(l.cnpj,''),'.',''),'/',''),'-','') LIKE ?
+                OR COALESCE(l.telefone,'') LIKE ?
+                OR COALESCE(co.nome,'') LIKE ?
+            )
+        """
+        params.extend([termo, termo, termo_cnpj, termo, termo])
+
+    if status_filtro:
+        sql += " AND l.status=?"
+        params.append(status_filtro)
+
+    sql += " ORDER BY l.id DESC"
+    leads = con.execute(sql, params).fetchall()
+    resumo = con.execute("SELECT status, COUNT(*) total FROM leads_contabilidade GROUP BY status").fetchall()
+    con.close()
+    return render_template("leads_admin.html", leads=leads, resumo=resumo, busca=busca, status_filtro=status_filtro)
+
 
 @app.route("/contabilidade")
 @login_required("contabilidade")

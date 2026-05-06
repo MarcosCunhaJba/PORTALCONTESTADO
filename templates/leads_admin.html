@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+{% block title %}Leads das Contabilidades{% endblock %}
+{% block page_title %}Leads das Contabilidades{% endblock %}
+{% block content %}
+<div class="card">
+    <h2>Leads indicados pelas contabilidades</h2>
+    <p style="color:#64748b;">Acompanhe as indicações recebidas e atualize o status.</p>
+</div>
+<div class="card">
+    <form method="get" class="filters">
+        <div class="field" style="min-width:280px;"><label>Buscar</label><input name="busca" value="{{ busca or '' }}" placeholder="Cliente, CNPJ, telefone ou contabilidade"></div>
+        <div class="field"><label>Status</label><select name="status"><option value="">Todos</option>{% for s in ['Novo','Em contato','Convertido','Perdido'] %}<option value="{{s}}" {% if status_filtro==s %}selected{% endif %}>{{s}}</option>{% endfor %}</select></div>
+        <button class="btn">Filtrar</button><a class="btn btn-light" href="{{ url_for('leads_admin') }}">Limpar</a>
+    </form>
+</div>
+<div class="card">
+    <table>
+        <tr><th>Data</th><th>Contabilidade</th><th>Cliente</th><th>CNPJ</th><th>Telefone</th><th>Observação</th><th>Status</th><th>Ação</th></tr>
+        {% for l in leads %}
+        <tr>
+            <td>{{ l.criado_em }}</td><td>{{ l.contabilidade_nome or '-' }}</td><td><b>{{ l.nome_cliente }}</b></td><td>{{ l.cnpj or '-' }}</td><td>{{ l.telefone }}</td><td>{{ l.observacao or '-' }}</td><td>{{ l.status }}</td>
+            <td><form method="post" style="display:flex;gap:6px;"><input type="hidden" name="lead_id" value="{{ l.id }}"><select name="status">{% for s in ['Novo','Em contato','Convertido','Perdido'] %}<option value="{{s}}" {% if l.status==s %}selected{% endif %}>{{s}}</option>{% endfor %}</select><button class="btn btn-light">Salvar</button></form></td>
+        </tr>
+        {% endfor %}
+        {% if not leads %}<tr><td colspan="8">Nenhum lead encontrado.</td></tr>{% endif %}
+    </table>
+</div>
+{% endblock %}
