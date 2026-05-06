@@ -27,7 +27,10 @@
             {% else %}
                 <a href="{{ url_for('area_contabilidade') }}">Área Contabilidade</a>
             {% endif %}
-            <a href="{{ url_for('logout') }}">Sair</a>
+            
+                <a href="{{ url_for('xml_controle') }}">Controle XML</a>
+                <a href="{{ url_for('leads_admin') }}">Leads Contabilidade</a>
+                <a href="{{ url_for('logout') }}">Sair</a>
         </nav>
         {% endif %}
         <div class="side-footer">

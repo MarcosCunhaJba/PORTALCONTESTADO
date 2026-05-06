@@ -490,6 +490,72 @@ def excluir_contabilidade(id):
     flash("Contabilidade excluída.")
     return redirect(url_for("contabilidades"))
 
+
+@app.route("/admin/xml-controle")
+@login_required("admin")
+def xml_controle():
+    busca = request.args.get("busca", "").strip()
+    status = request.args.get("status", "").strip()
+    tipo = request.args.get("tipo", "").strip()
+    limite = int(request.args.get("limite", 300) or 300)
+
+    con = db()
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS xml_envios_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cliente_id INTEGER,
+            cnpj TEXT,
+            arquivo TEXT,
+            chave TEXT,
+            numero_nf TEXT,
+            tipo_doc TEXT,
+            direcao TEXT,
+            status TEXT,
+            mensagem TEXT,
+            criado_em TEXT
+        )
+    """)
+
+    sql = """
+        SELECT l.*, c.razao, c.fantasia
+        FROM xml_envios_log l
+        LEFT JOIN clientes c ON c.id = l.cliente_id
+        WHERE 1=1
+    """
+    params = []
+
+    if busca:
+        termo = f"%{busca}%"
+        termo_cnpj = f"%{somente_digitos(busca)}%"
+        sql += """
+            AND (
+                COALESCE(c.razao,'') LIKE ?
+                OR COALESCE(c.fantasia,'') LIKE ?
+                OR COALESCE(l.cnpj,'') LIKE ?
+                OR COALESCE(l.chave,'') LIKE ?
+                OR COALESCE(l.arquivo,'') LIKE ?
+            )
+        """
+        params.extend([termo, termo, termo_cnpj, termo, termo])
+
+    if status:
+        sql += " AND l.status = ?"
+        params.append(status)
+
+    if tipo:
+        sql += " AND l.tipo_doc = ?"
+        params.append(tipo)
+
+    sql += " ORDER BY l.id DESC LIMIT ?"
+    params.append(limite)
+
+    logs = con.execute(sql, params).fetchall()
+    resumo = con.execute("SELECT status, COUNT(*) total FROM xml_envios_log GROUP BY status").fetchall()
+    con.close()
+
+    return render_template("xml_controle.html", logs=logs, resumo=resumo, busca=busca, status=status, tipo=tipo, limite=limite)
+
+
 @app.route("/clientes", methods=["GET", "POST"])
 @login_required("admin")
 def clientes():
